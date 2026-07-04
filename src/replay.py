@@ -1,4 +1,4 @@
-"""Step-by-step episode replay for dashboard and report exports."""
+"""Step-by-step episode replay for the dashboard."""
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from src.environment import MicrogridEnv
 from src.discretizer import BinThresholds
 
 ActionFn = Callable[[MicrogridEnv], int]
-"""Policy callback used by replay and evaluation utilities."""
 
 
 def trace_episode(

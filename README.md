@@ -1,4 +1,4 @@
-# GréineGrid RL — Battery Dispatch
+# GreineGrid_Qagent — Battery Dispatch
 
 Tabular reinforcement learning for home battery dispatch on a solar + grid microgrid. The agent learns when to **hold**, **charge** from surplus solar, or **discharge** to meet load, using real Ausgrid solar/load data and AEMO wholesale prices.
 
@@ -45,6 +45,9 @@ Notebooks for building the dataset:
 │   ├── train.py          # Training entry point
 │   ├── evaluate.py       # Policy evaluation
 │   ├── compare.py        # Rule vs RL comparison
+│   ├── visualize.py      # Policy map and Q-table plots
+│   ├── tariff_sensitivity.py  # Retail margin sweep
+│   ├── replay.py         # Episode trace for dashboard
 │   ├── rule_baseline.py  # Heuristic controller
 │   └── agents/           # Q-Learning and SARSA
 ├── dashboard/app.py      # Streamlit digital twin
@@ -70,15 +73,38 @@ Saves:
 
 - `results/models/Q_<agent>_<timestamp>.npy`
 - `results/logs/train_*.csv` and `test_*.csv`
-- `results/plots/learning_curve_*.png`
+- `results/plots/learning_curve_*.png` and `eval_curve_*.png`
 - `artifacts/bin_thresholds.json`
 
 ### Compare policies on the test split
 
 ```bash
-python -m src.compare --q-model results/models/Q_q_learning_YYYYMMDD_HHMMSS.npy
-python -m src.compare --q-model ... --sarsa-model ...
+python -m src.compare \
+  --q-model results/models/Q_q_learning_20260704_115627_main.npy \
+  --sarsa-model results/models/Q_sarsa_20260704_115834_main.npy \
+  --output results/logs/comparison_main.csv
 ```
+
+Omit `--output` to auto-save a timestamped CSV under `results/logs/`. The table includes `cost_saving_vs_rule_pct` for each RL policy.
+
+### Tariff sensitivity
+
+Retrain under several retail margins and compare test-set cost vs the rule baseline:
+
+```bash
+python -m src.tariff_sensitivity --margins 0.15 0.22 0.35 --episodes 10000
+python -m src.tariff_sensitivity --quick   # 3000 episodes, faster
+```
+
+Output: `results/logs/tariff_sensitivity_<timestamp>.csv`
+
+### Visualise a trained policy
+
+```bash
+python -m src.visualize --model results/models/Q_sarsa_20260704_115834_main.npy --tag sarsa_main
+```
+
+Writes policy-map and Q-table heatmap PNGs to `results/plots/`.
 
 ### Run the dashboard
 
@@ -96,7 +122,7 @@ Open [http://localhost:8501](http://localhost:8501) to replay episodes and compa
 
 ## Configuration
 
-Edit `config.yaml` for battery limits, learning rate, discount factor, exploration schedule, and reward weights. The primary customer ID and episode length are under `data:`.
+Edit `config.yaml` for battery limits, learning rate, discount factor, exploration schedule, tariff rates, and reward weights. The primary customer ID and episode length are under `data:`.
 
 ## License
 

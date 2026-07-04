@@ -48,3 +48,6 @@ desktop.ini
 # Logs and local scratch
 *.log
 *.tmp
+
+# Personal reference (not for repo)
+GreineGrid_RL_Colab.ipynb
