@@ -1,0 +1,50 @@
+# GréineGrid RL — project configuration
+
+data:
+  merged_csv: data/merged_30min_v2.csv
+  day_split_json: data/day_split.json
+  primary_customer_id: 1
+  steps_per_episode: 48
+
+battery:
+  capacity_kwh: 10.0
+  initial_soc_pct: 50.0
+  max_charge_kw: 5.0
+  max_discharge_kw: 5.0
+  soc_low_pct: 30.0
+  soc_high_pct: 70.0
+  min_soc_pct: 10.0
+  max_soc_pct: 90.0
+
+discretizer:
+  n_bins: 3
+  n_time_periods: 4
+
+training:
+  alpha: 0.1
+  gamma: 0.95
+  epsilon: 0.1
+  epsilon_min: 0.01
+  epsilon_decay: 0.999
+  n_episodes: 10000
+  random_seed: 42
+
+reward:
+  cost_only:
+    w_grid_cost: 1.0
+    w_solar_waste: 0.5
+    w_battery_deg: 0.0
+    w_unmet_demand: 0.0
+    w_invalid_action: 0.1
+  battery_aware:
+    w_grid_cost: 1.0
+    w_solar_waste: 0.5
+    w_battery_deg: 0.3
+    w_unmet_demand: 1.0
+    w_invalid_action: 0.1
+
+paths:
+  artifacts: artifacts
+  results_logs: results/logs
+  results_models: results/models
+  results_plots: results/plots
