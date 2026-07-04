@@ -14,7 +14,6 @@ from src.rule_baseline import run_rule_episode
 
 
 ActionFn = Callable[[MicrogridEnv], int]
-"""Policy callback: given the live environment, return an action index."""
 
 
 def run_episode_with_policy(

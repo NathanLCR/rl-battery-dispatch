@@ -1,4 +1,4 @@
-"""Microgrid battery environment — custom MDP for GréineGrid RL."""
+"""Microgrid battery environment — custom MDP for GreineGrid_Qagent."""
 
 from __future__ import annotations
 
@@ -21,18 +21,7 @@ class StepResult:
 
 
 class MicrogridEnv:
-    """
-    Gym-style MDP for home battery dispatch on a solar + grid microgrid.
-
-    Episode structure:
-        - One calendar day, 48 steps at 30-minute resolution.
-        - State: discretised (SOC, PV, load, price, time-of-day).
-        - Actions: hold, charge surplus solar, or discharge to offset load.
-        - Exogenous inputs per step come from merged Ausgrid + AEMO data.
-
-    Rewards are negative costs (grid import, solar curtailment, battery stress)
-    weighted by ``reward_mode`` in ``config.yaml``.
-    """
+    """One-day (48-step) battery dispatch MDP using Ausgrid load/PV and AEMO prices."""
 
     def __init__(
         self,
@@ -85,11 +74,12 @@ class MicrogridEnv:
         pv_kwh = float(row["pv_kwh"])
         load_kwh = float(row["load_kwh"])
         price = float(row["price_per_kwh"])
+        retail_price = price + self.cfg.tariff.retail_margin_per_kwh
 
         physics = self._apply_action(action, pv_kwh, load_kwh)
-        reward = self._compute_reward(physics, price)
+        reward = self._compute_reward(physics, retail_price)
 
-        self.total_grid_cost += physics["grid_import_kwh"] * price
+        self.total_grid_cost += physics["grid_import_kwh"] * retail_price
         self.total_grid_import_kwh += physics["grid_import_kwh"]
         self.total_solar_waste_kwh += physics["solar_waste_kwh"]
 
@@ -106,10 +96,11 @@ class MicrogridEnv:
             "pv_kwh": pv_kwh,
             "load_kwh": load_kwh,
             "price_per_kwh": price,
+            "retail_price_per_kwh": retail_price,
             **physics,
         }
 
-        next_state = self._observe() if not done else self._observe()
+        next_state = self._observe()
         return next_state, reward, done, info
 
     def _observe(self) -> int:
@@ -160,11 +151,9 @@ class MicrogridEnv:
         soc_kwh = max(0.0, min(capacity, soc_kwh))
         soc_pct = soc_kwh / capacity * 100.0
 
-        # Residual load after PV and battery discharge; surplus after load and charging
         grid_import_kwh = max(0.0, load_kwh - pv_kwh - discharge_kwh)
         solar_waste_kwh = max(0.0, pv_kwh - load_kwh - charge_kwh)
 
-        # Penalise operating outside configured SOC guard bands
         battery_deg = 0.0
         if soc_pct < cfg.min_soc_pct:
             battery_deg += (cfg.min_soc_pct - soc_pct) / 100.0
@@ -179,18 +168,22 @@ class MicrogridEnv:
             "soc_pct": soc_pct,
             "battery_deg": battery_deg,
             "invalid_action": float(invalid),
-            "unmet_demand_kwh": 0.0,
         }
 
-    def _compute_reward(self, physics: dict[str, float], price_per_kwh: float) -> float:
-        """Return a scalar reward; higher is better (costs are subtracted)."""
+    def _compute_reward(self, physics: dict[str, float], retail_price_per_kwh: float) -> float:
+        """Negative household cost (AUD): import bill, curtailed solar, battery wear."""
         w = self.reward_weights
-        grid_cost = physics["grid_import_kwh"] * price_per_kwh
+        tar = self.cfg.tariff
+        capacity = self.cfg.battery_capacity_kwh
+
+        import_cost = physics["grid_import_kwh"] * retail_price_per_kwh
+        solar_opp_cost = physics["solar_waste_kwh"] * tar.feed_in_per_kwh
+        deg_cost = physics["battery_deg"] * capacity * tar.battery_deg_cost_per_kwh
+
         reward = 0.0
-        reward -= w.w_grid_cost * grid_cost
-        reward -= w.w_solar_waste * physics["solar_waste_kwh"]
-        reward -= w.w_battery_deg * physics["battery_deg"]
-        reward -= w.w_unmet_demand * physics["unmet_demand_kwh"]
+        reward -= w.w_grid_cost * import_cost
+        reward -= w.w_solar_waste * solar_opp_cost
+        reward -= w.w_battery_deg * deg_cost
         if physics["invalid_action"]:
             reward -= w.w_invalid_action
         return float(reward)

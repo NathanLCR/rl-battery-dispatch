@@ -1,4 +1,4 @@
-"""GréineGrid AI — Streamlit digital twin dashboard."""
+"""GreineGrid_Qagent — Streamlit digital twin dashboard."""
 
 from __future__ import annotations
 
@@ -25,8 +25,8 @@ from src.replay import q_values_for_state, trace_episode
 from src.rule_baseline import rule_action
 from src.train import greedy_action_fn, make_agent
 
-DEFAULT_Q = "Q_q_learning_20260704_082920.npy"
-DEFAULT_SARSA = "Q_sarsa_20260704_083128.npy"
+DEFAULT_Q = "Q_q_learning_20260704_115627_main.npy"
+DEFAULT_SARSA = "Q_sarsa_20260704_115834_main.npy"
 ACTION_COLORS = {"hold": "#94a3b8", "charge": "#22c55e", "discharge": "#f97316"}
 
 
@@ -151,8 +151,8 @@ def format_trace(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def main() -> None:
-    st.set_page_config(page_title="GréineGrid Digital Twin", layout="wide")
-    st.title("GréineGrid AI — Digital Twin")
+    st.set_page_config(page_title="GreineGrid_Qagent", layout="wide")
+    st.title("GreineGrid_Qagent — Digital Twin")
     st.caption("Replay home battery dispatch on real Ausgrid + AEMO data (Customer 1)")
 
     try:
@@ -286,7 +286,7 @@ def _render_app() -> None:
         st.download_button(
             "Download replay JSON",
             data=json.dumps(export_payload, indent=2, default=str),
-            file_name=f"greinegrid_replay_{day}.json",
+            file_name=f"GreineGrid_Qagent_replay_{day}.json",
             mime="application/json",
         )
 

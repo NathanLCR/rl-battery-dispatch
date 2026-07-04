@@ -1,4 +1,4 @@
-# GréineGrid RL — project configuration
+# GreineGrid_Qagent — project configuration
 
 data:
   merged_csv: data/merged_30min_v2.csv
@@ -29,18 +29,22 @@ training:
   n_episodes: 10000
   random_seed: 42
 
+# Tariff (AUD/kWh): retail import = wholesale spot + margin; curtailed solar at feed-in rate.
+tariff:
+  retail_margin_per_kwh: 0.22
+  feed_in_per_kwh: 0.06
+  battery_deg_cost_per_kwh: 0.05
+
 reward:
   cost_only:
     w_grid_cost: 1.0
-    w_solar_waste: 0.5
+    w_solar_waste: 1.0
     w_battery_deg: 0.0
-    w_unmet_demand: 0.0
     w_invalid_action: 0.1
   battery_aware:
     w_grid_cost: 1.0
-    w_solar_waste: 0.5
-    w_battery_deg: 0.3
-    w_unmet_demand: 1.0
+    w_solar_waste: 1.0
+    w_battery_deg: 1.0
     w_invalid_action: 0.1
 
 paths:

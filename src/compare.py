@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
-from src.agents.q_learning import QLearningAgent
-from src.agents.sarsa import SARSAAgent
 from src.config import load_config
 from src.data_loader import load_customer_dataset
-from src.discretizer import BinThresholds, fit_discretizer
+from src.discretizer import fit_discretizer
 from src.environment import MicrogridEnv
 from src.evaluate import evaluate_split, summarize
 from src.rule_baseline import rule_action
@@ -26,11 +25,43 @@ def load_agent(agent_name: str, model_path: Path, cfg):
     return agent
 
 
+def build_comparison_table(
+    rows: list[dict],
+) -> pd.DataFrame:
+    """Add cost-saving vs rule baseline as a percentage column."""
+    table = pd.DataFrame(rows)
+    if not rows:
+        return table
+
+    rule_cost = rows[0]["total_grid_cost_aud"]
+    savings = []
+    for r in rows:
+        if r["policy"] == "rule_baseline":
+            savings.append(None)
+        else:
+            saving = (rule_cost - r["total_grid_cost_aud"]) / rule_cost * 100
+            savings.append(round(saving, 2))
+    table["cost_saving_vs_rule_pct"] = savings
+    return table
+
+
+def default_output_path(cfg) -> Path:
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return cfg.results_logs / f"comparison_test_{stamp}.csv"
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--q-model", type=Path, default=None)
-    parser.add_argument("--sarsa-model", type=Path, default=None)
-    parser.add_argument("--reward-mode", default="battery_aware")
+    parser = argparse.ArgumentParser(description="Compare rule baseline vs RL on test split")
+    parser.add_argument("--q-model", type=Path, default=None, help="Path to Q-Learning .npy model")
+    parser.add_argument("--sarsa-model", type=Path, default=None, help="Path to SARSA .npy model")
+    parser.add_argument("--reward-mode", default="battery_aware", choices=["battery_aware", "cost_only"])
+    parser.add_argument(
+        "--output",
+        "-o",
+        type=Path,
+        default=None,
+        help="Save comparison table to CSV (default: results/logs/comparison_test_<timestamp>.csv)",
+    )
     args = parser.parse_args()
 
     cfg = load_config()
@@ -67,7 +98,7 @@ def main() -> None:
         stats["policy"] = "sarsa"
         rows.append(stats)
 
-    table = pd.DataFrame(rows)
+    table = build_comparison_table(rows)
     print("\n=== TEST SPLIT COMPARISON ===")
     print(table.to_string(index=False))
 
@@ -76,6 +107,11 @@ def main() -> None:
         for r in rows[1:]:
             saving = (rule_cost - r["total_grid_cost_aud"]) / rule_cost * 100
             print(f"\n{r['policy']} cost saving vs rule: {saving:+.1f}%")
+
+    out_path = args.output if args.output is not None else default_output_path(cfg)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    table.to_csv(out_path, index=False)
+    print(f"\nSaved comparison -> {out_path}")
 
 
 if __name__ == "__main__":

@@ -13,13 +13,21 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 @dataclass
 class RewardWeights:
-    """Linear reward shaping coefficients (all penalties are subtracted)."""
+    """Reward weights applied to already-monetised cost terms (all subtracted)."""
 
     w_grid_cost: float
     w_solar_waste: float
     w_battery_deg: float
-    w_unmet_demand: float
     w_invalid_action: float
+
+
+@dataclass
+class Tariff:
+    """Electricity tariff model (AUD/kWh) used to monetise the reward."""
+
+    retail_margin_per_kwh: float
+    feed_in_per_kwh: float
+    battery_deg_cost_per_kwh: float
 
 
 @dataclass
@@ -48,6 +56,7 @@ class Config:
     epsilon_decay: float
     n_episodes: int
     random_seed: int
+    tariff: Tariff
     reward_cost_only: RewardWeights
     reward_battery_aware: RewardWeights
     artifacts_dir: Path
@@ -67,7 +76,6 @@ def load_config(path: Path | None = None) -> Config:
             w_grid_cost=block["w_grid_cost"],
             w_solar_waste=block["w_solar_waste"],
             w_battery_deg=block["w_battery_deg"],
-            w_unmet_demand=block["w_unmet_demand"],
             w_invalid_action=block["w_invalid_action"],
         )
 
@@ -77,6 +85,7 @@ def load_config(path: Path | None = None) -> Config:
     bat = raw["battery"]
     disc = raw["discretizer"]
     train = raw["training"]
+    tar = raw["tariff"]
 
     return Config(
         repo_root=root,
@@ -101,6 +110,11 @@ def load_config(path: Path | None = None) -> Config:
         epsilon_decay=train["epsilon_decay"],
         n_episodes=train["n_episodes"],
         random_seed=train["random_seed"],
+        tariff=Tariff(
+            retail_margin_per_kwh=tar["retail_margin_per_kwh"],
+            feed_in_per_kwh=tar["feed_in_per_kwh"],
+            battery_deg_cost_per_kwh=tar["battery_deg_cost_per_kwh"],
+        ),
         reward_cost_only=rw(raw["reward"]["cost_only"]),
         reward_battery_aware=rw(raw["reward"]["battery_aware"]),
         artifacts_dir=root / paths["artifacts"],

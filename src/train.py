@@ -20,6 +20,54 @@ from src.environment import MicrogridEnv
 from src.evaluate import evaluate_split, summarize
 
 
+def _greedy_eval(
+    agent,
+    df: pd.DataFrame,
+    days: list[str],
+    thresholds: BinThresholds,
+    cfg: Config,
+    reward_mode: str,
+) -> tuple[float, float]:
+    """Roll out the current *greedy* (no-exploration) policy over a fixed set of
+    days and return (mean total reward, mean grid-cost AUD). No Q-updates."""
+    rewards, costs = [], []
+    for day in days:
+        env = MicrogridEnv(get_episode(df, day), thresholds, cfg, reward_mode=reward_mode)
+        env.reset()
+        total_reward = 0.0
+        done = False
+        while not done:
+            action = agent.q.greedy_action(env._observe())
+            _, reward, done, _ = env.step(action)
+            total_reward += reward
+        rewards.append(total_reward)
+        costs.append(env.total_grid_cost)
+    return float(np.mean(rewards)), float(np.mean(costs))
+
+
+def _rule_eval(
+    df: pd.DataFrame,
+    days: list[str],
+    thresholds: BinThresholds,
+    cfg: Config,
+    reward_mode: str,
+) -> float:
+    """Mean grid-cost AUD of the rule baseline on a fixed set of days (reference line)."""
+    from src.rule_baseline import rule_action
+
+    costs = []
+    for day in days:
+        env = MicrogridEnv(get_episode(df, day), thresholds, cfg, reward_mode=reward_mode)
+        env.reset()
+        done = False
+        while not done:
+            row = env.episode_df.iloc[env._step_idx]
+            action = rule_action(env._soc_pct, float(row["pv_kwh"]), float(row["load_kwh"]), env.thresholds)
+            _, _, done, _ = env.step(action)
+        costs.append(env.total_grid_cost)
+    return float(np.mean(costs))
+
+
 def train_agent(
     agent,
     df: pd.DataFrame,
@@ -27,13 +75,16 @@ def train_agent(
     thresholds: BinThresholds,
     cfg: Config,
     reward_mode: str = "battery_aware",
-) -> list[dict]:
+    val_days: list[str] | None = None,
+    eval_every: int = 500,
+) -> tuple[list[dict], list[dict]]:
     """
     Run episodic training by sampling random train days.
 
-    Returns per-episode metrics (reward, grid cost, exploration rate).
+    Returns per-episode logs and periodic greedy validation metrics.
     """
     logs: list[dict] = []
+    eval_logs: list[dict] = []
     rng = np.random.default_rng(cfg.random_seed)
 
     for episode_idx in range(1, cfg.n_episodes + 1):
@@ -80,14 +131,23 @@ def train_agent(
             }
         )
 
+        if val_days and episode_idx % eval_every == 0:
+            eval_reward, eval_cost = _greedy_eval(agent, df, val_days, thresholds, cfg, reward_mode)
+            eval_logs.append(
+                {"episode": episode_idx, "val_mean_reward": eval_reward, "val_mean_grid_cost_aud": eval_cost}
+            )
+
         if episode_idx % 500 == 0:
             recent = [r["total_reward"] for r in logs[-500:]]
-            print(
+            msg = (
                 f"  ep {episode_idx:5d} | avg reward (last 500): {np.mean(recent):+.3f} | "
                 f"epsilon: {agent.epsilon:.4f}"
             )
+            if eval_logs:
+                msg += f" | val greedy cost: {eval_logs[-1]['val_mean_grid_cost_aud']:.3f} AUD"
+            print(msg)
 
-    return logs
+    return logs, eval_logs
 
 
 def save_training_log(logs: list[dict], path: Path) -> None:
@@ -118,6 +178,46 @@ def plot_learning_curve(logs: list[dict], out_path: Path, window: int = 200) -> 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=120)
     plt.close(fig)
+
+
+def plot_eval_curve(
+    eval_logs: list[dict], out_path: Path, rule_cost: float | None = None
+) -> None:
+    """Greedy validation reward and grid cost vs episode index."""
+    if not eval_logs:
+        return
+    ep = [e["episode"] for e in eval_logs]
+    rew = [e["val_mean_reward"] for e in eval_logs]
+    cost = [e["val_mean_grid_cost_aud"] for e in eval_logs]
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(9, 7), sharex=True)
+    ax1.plot(ep, rew, marker="o", ms=3, linewidth=1.4, color="#2563eb")
+    ax1.set_ylabel("Val greedy mean reward")
+    ax1.set_title("Learning progress on fixed validation set")
+    ax1.grid(True, alpha=0.3)
+
+    ax2.plot(ep, cost, marker="o", ms=3, linewidth=1.4, color="#16a34a", label="RL greedy")
+    if rule_cost is not None:
+        ax2.axhline(rule_cost, color="#dc2626", linestyle="--", linewidth=1.4, label="Rule baseline")
+    ax2.set_xlabel("Episode")
+    ax2.set_ylabel("Val mean grid cost (AUD/day)")
+    ax2.legend(loc="best", fontsize=9)
+    ax2.grid(True, alpha=0.3)
+
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=120)
+    plt.close(fig)
+
+
+def save_eval_log(eval_logs: list[dict], path: Path) -> None:
+    if not eval_logs:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=list(eval_logs[0].keys()))
+        writer.writeheader()
+        writer.writerows(eval_logs)
 
 
 def make_agent(name: str, cfg: Config):
@@ -154,7 +254,7 @@ def greedy_action_fn(agent):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train GréineGrid RL agent")
+    parser = argparse.ArgumentParser(description="Train GreineGrid_Qagent RL agent")
     parser.add_argument(
         "--agent",
         choices=["q_learning", "sarsa"],
@@ -191,19 +291,30 @@ def main() -> None:
         f"Training {args.agent} for {cfg.n_episodes} episodes on {len(day_split.train)} train days "
         f"(gamma={cfg.gamma}, epsilon={cfg.epsilon}, decay={cfg.epsilon_decay})..."
     )
-    logs = train_agent(agent, df, day_split.train, thresholds, cfg, args.reward_mode)
+    logs, eval_logs = train_agent(
+        agent, df, day_split.train, thresholds, cfg, args.reward_mode,
+        val_days=day_split.val, eval_every=500,
+    )
 
     model_path = cfg.results_models / f"Q_{args.agent}_{stamp}{tag}.npy"
     log_path = cfg.results_logs / f"train_{args.agent}_{stamp}{tag}.csv"
     plot_path = cfg.results_plots / f"learning_curve_{args.agent}_{stamp}{tag}.png"
+    eval_log_path = cfg.results_logs / f"eval_{args.agent}_{stamp}{tag}.csv"
+    eval_plot_path = cfg.results_plots / f"eval_curve_{args.agent}_{stamp}{tag}.png"
 
     agent.q.save(model_path)
     save_training_log(logs, log_path)
     plot_learning_curve(logs, plot_path)
 
+    rule_val_cost = _rule_eval(df, day_split.val, thresholds, cfg, args.reward_mode)
+    save_eval_log(eval_logs, eval_log_path)
+    plot_eval_curve(eval_logs, eval_plot_path, rule_cost=rule_val_cost)
+
     print(f"\nSaved model  -> {model_path}")
     print(f"Saved log    -> {log_path}")
     print(f"Saved plot   -> {plot_path}")
+    print(f"Saved eval   -> {eval_log_path}")
+    print(f"Saved eval plot -> {eval_plot_path}")
 
     policy = greedy_action_fn(agent)
     test_results = evaluate_split(df, thresholds, day_split, "test", policy, cfg, args.reward_mode)

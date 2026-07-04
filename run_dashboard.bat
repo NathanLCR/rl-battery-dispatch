@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
 echo.
-echo  GréineGrid Dashboard
+echo  GreineGrid_Qagent Dashboard
 echo  ====================
 echo  Starting server... browser will open at http://localhost:8501
 echo  Press Ctrl+C in this window to stop.

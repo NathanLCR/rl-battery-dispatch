@@ -1,1 +1,1 @@
-"""GréineGrid RL — battery dispatch simulation and tabular agents."""
+"""GreineGrid_Qagent — battery dispatch simulation and tabular agents."""
