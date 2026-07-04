@@ -28,6 +28,8 @@ training:
   epsilon_decay: 0.999
   n_episodes: 10000
   random_seed: 42
+  alpha_decay: 0.9995   # per-episode Robbins-Monro decay (1.0 = fixed alpha)
+  alpha_min: 0.01
 
 # Tariff (AUD/kWh): retail import = wholesale spot + margin; curtailed solar at feed-in rate.
 tariff:

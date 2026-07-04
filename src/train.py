@@ -13,6 +13,7 @@ import pandas as pd
 
 from src.agents.q_learning import QLearningAgent
 from src.agents.sarsa import SARSAAgent
+from src.agents.double_q_learning import DoubleQLearningAgent
 from src.config import Config, ensure_output_dirs, load_config
 from src.data_loader import DaySplit, get_episode, load_customer_dataset
 from src.discretizer import BinThresholds, fit_discretizer
@@ -37,7 +38,11 @@ def _greedy_eval(
         total_reward = 0.0
         done = False
         while not done:
-            action = agent.q.greedy_action(env._observe())
+            action = (
+                agent.greedy_action(env._observe())
+                if hasattr(agent, "greedy_action")
+                else agent.q.greedy_action(env._observe())
+            )
             _, reward, done, _ = env.step(action)
             total_reward += reward
         rewards.append(total_reward)
@@ -119,6 +124,8 @@ def train_agent(
             state = next_state
 
         agent.decay_epsilon()
+        if hasattr(agent, "decay_alpha"):
+            agent.decay_alpha()
         logs.append(
             {
                 "episode": episode_idx,
@@ -220,27 +227,37 @@ def save_eval_log(eval_logs: list[dict], path: Path) -> None:
         writer.writerows(eval_logs)
 
 
-def make_agent(name: str, cfg: Config):
+def make_agent(name: str, cfg: Config, seed: int | None = None):
     """Factory for supported tabular agents using training hyperparameters from config."""
+    agent_seed = cfg.random_seed if seed is None else seed
+    common = dict(
+        alpha=cfg.alpha,
+        gamma=cfg.gamma,
+        epsilon=cfg.epsilon,
+        epsilon_min=cfg.epsilon_min,
+        epsilon_decay=cfg.epsilon_decay,
+        alpha_decay=cfg.alpha_decay,
+        alpha_min=cfg.alpha_min,
+        seed=agent_seed,
+    )
     if name == "q_learning":
-        return QLearningAgent(
-            alpha=cfg.alpha,
-            gamma=cfg.gamma,
-            epsilon=cfg.epsilon,
-            epsilon_min=cfg.epsilon_min,
-            epsilon_decay=cfg.epsilon_decay,
-            seed=cfg.random_seed,
-        )
+        return QLearningAgent(**common)
     if name == "sarsa":
-        return SARSAAgent(
-            alpha=cfg.alpha,
-            gamma=cfg.gamma,
-            epsilon=cfg.epsilon,
-            epsilon_min=cfg.epsilon_min,
-            epsilon_decay=cfg.epsilon_decay,
-            seed=cfg.random_seed,
-        )
+        return SARSAAgent(**common)
+    if name == "double_q_learning":
+        return DoubleQLearningAgent(**common)
     raise ValueError(f"Unknown agent: {name}")
+
+
+def load_trained_agent(name: str, model_path: Path, cfg: Config):
+    """Restore a trained agent from disk and disable exploration."""
+    agent = make_agent(name, cfg)
+    if name == "double_q_learning":
+        agent.load(model_path)
+    else:
+        agent.q = agent.q.load(model_path)
+    agent.epsilon = 0.0
+    return agent
 
 
 def greedy_action_fn(agent):
@@ -248,6 +265,8 @@ def greedy_action_fn(agent):
 
     def policy(env: MicrogridEnv) -> int:
         state = env._observe()
+        if hasattr(agent, "greedy_action"):
+            return agent.greedy_action(state)
         return agent.q.greedy_action(state)
 
     return policy
@@ -257,10 +276,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Train GreineGrid_Qagent RL agent")
     parser.add_argument(
         "--agent",
-        choices=["q_learning", "sarsa"],
+        choices=["q_learning", "sarsa", "double_q_learning"],
         default="q_learning",
     )
     parser.add_argument("--episodes", type=int, default=None)
+    parser.add_argument("--seed", type=int, default=None, help="Random seed override")
     parser.add_argument("--reward-mode", choices=["battery_aware", "cost_only"], default="battery_aware")
     parser.add_argument("--gamma", type=float, default=None)
     parser.add_argument("--epsilon", type=float, default=None)
@@ -277,13 +297,15 @@ def main() -> None:
         cfg.epsilon = args.epsilon
     if args.epsilon_decay is not None:
         cfg.epsilon_decay = args.epsilon_decay
+    if args.seed is not None:
+        cfg.random_seed = args.seed
 
     ensure_output_dirs(cfg)
     df, day_split = load_customer_dataset(cfg)
     thresholds = fit_discretizer(df, cfg)
     thresholds.save(cfg.artifacts_dir / "bin_thresholds.json")
 
-    agent = make_agent(args.agent, cfg)
+    agent = make_agent(args.agent, cfg, seed=cfg.random_seed)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     tag = f"_{args.tag}" if args.tag else ""
 
@@ -302,7 +324,10 @@ def main() -> None:
     eval_log_path = cfg.results_logs / f"eval_{args.agent}_{stamp}{tag}.csv"
     eval_plot_path = cfg.results_plots / f"eval_curve_{args.agent}_{stamp}{tag}.png"
 
-    agent.q.save(model_path)
+    if args.agent == "double_q_learning":
+        agent.save(model_path)
+    else:
+        agent.q.save(model_path)
     save_training_log(logs, log_path)
     plot_learning_curve(logs, plot_path)
 

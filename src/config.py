@@ -56,6 +56,8 @@ class Config:
     epsilon_decay: float
     n_episodes: int
     random_seed: int
+    alpha_decay: float
+    alpha_min: float
     tariff: Tariff
     reward_cost_only: RewardWeights
     reward_battery_aware: RewardWeights
@@ -110,6 +112,8 @@ def load_config(path: Path | None = None) -> Config:
         epsilon_decay=train["epsilon_decay"],
         n_episodes=train["n_episodes"],
         random_seed=train["random_seed"],
+        alpha_decay=train.get("alpha_decay", 1.0),
+        alpha_min=train.get("alpha_min", 0.01),
         tariff=Tariff(
             retail_margin_per_kwh=tar["retail_margin_per_kwh"],
             feed_in_per_kwh=tar["feed_in_per_kwh"],
