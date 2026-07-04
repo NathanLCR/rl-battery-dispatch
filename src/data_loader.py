@@ -102,14 +102,18 @@ def get_episode(df: pd.DataFrame, episode_day: str) -> pd.DataFrame:
     return ep.reset_index(drop=True)
 
 
-def load_customer_dataset(cfg: Config | None = None) -> tuple[pd.DataFrame, DaySplit]:
-    """Load merged data for the configured customer with split labels attached."""
+def load_customer_dataset(
+    cfg: Config | None = None,
+    customer_id: int | None = None,
+) -> tuple[pd.DataFrame, DaySplit]:
+    """Load merged data for a customer with split labels attached."""
     cfg = cfg or load_config()
+    cid = customer_id if customer_id is not None else cfg.primary_customer_id
     split = load_day_split(cfg.day_split_json)
     merged = load_merged_csv(cfg.merged_csv)
     customer_df = get_customer_episodes(
         merged,
-        customer_id=cfg.primary_customer_id,
+        customer_id=cid,
         steps_per_episode=cfg.steps_per_episode,
         split=split,
     )

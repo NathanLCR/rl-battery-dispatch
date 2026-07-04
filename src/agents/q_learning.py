@@ -25,6 +25,8 @@ class QLearningAgent:
         epsilon: float = 0.1,
         epsilon_min: float = 0.01,
         epsilon_decay: float = 0.999,
+        alpha_decay: float = 1.0,
+        alpha_min: float = 0.01,
         seed: int = 42,
     ) -> None:
         self.alpha = alpha
@@ -32,6 +34,8 @@ class QLearningAgent:
         self.epsilon = epsilon
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
+        self.alpha_decay = alpha_decay
+        self.alpha_min = alpha_min
         self.rng = np.random.default_rng(seed)
         self.q = QTable()
 
@@ -54,6 +58,9 @@ class QLearningAgent:
 
     def decay_epsilon(self) -> None:
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+
+    def decay_alpha(self) -> None:
+        self.alpha = max(self.alpha_min, self.alpha * self.alpha_decay)
 
     def action_fn(self, env) -> int:
         """Compatible with evaluate.run_episode_with_policy."""

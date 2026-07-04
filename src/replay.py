@@ -52,12 +52,21 @@ def trace_episode(
                 "pv_kwh": info["pv_kwh"],
                 "load_kwh": info["load_kwh"],
                 "price_per_kwh": info["price_per_kwh"],
+                "retail_price_per_kwh": info["retail_price_per_kwh"],
                 "grid_import_kwh": info["grid_import_kwh"],
                 "solar_waste_kwh": info["solar_waste_kwh"],
                 "charge_kwh": info["charge_kwh"],
                 "discharge_kwh": info["discharge_kwh"],
             }
         )
+
+    trace_df = pd.DataFrame(rows)
+    total_pv = trace_df["pv_kwh"].sum()
+    total_load = trace_df["load_kwh"].sum()
+    evening_mask = trace_df["timestamp"].apply(
+        lambda t: t.hour + t.minute / 60.0 >= 17.0
+    )
+    evening_import = trace_df.loc[evening_mask, "grid_import_kwh"].sum()
 
     summary = {
         "episode_day": env._episode_day,
@@ -66,8 +75,11 @@ def trace_episode(
         "grid_import_kwh": env.total_grid_import_kwh,
         "solar_waste_kwh": env.total_solar_waste_kwh,
         "final_soc_pct": env._soc_pct,
+        "self_consumption_rate": (total_pv - env.total_solar_waste_kwh) / total_pv if total_pv > 0 else 0.0,
+        "self_sufficiency": (total_load - env.total_grid_import_kwh) / total_load if total_load > 0 else 0.0,
+        "evening_peak_import_kwh": evening_import,
     }
-    return pd.DataFrame(rows), summary
+    return trace_df, summary
 
 
 def q_values_for_state(q_table, state: int) -> dict[str, float]:

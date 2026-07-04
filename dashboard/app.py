@@ -21,9 +21,11 @@ from src.config import load_config
 from src.data_loader import get_episode, load_customer_dataset
 from src.discretizer import fit_discretizer
 from src.environment import MicrogridEnv
+from src.oracle import no_battery_import_cost, oracle_perfect_foresight_import
 from src.replay import q_values_for_state, trace_episode
-from src.rule_baseline import rule_action
-from src.train import greedy_action_fn, make_agent
+from src.rule_baseline import greedy_self_consumption_action, rule_action
+from src.train import greedy_action_fn, load_trained_agent
+from dashboard.landing_animation import build_demo_gif, pick_demo_day
 
 DEFAULT_Q = "Q_q_learning_20260704_115627_main.npy"
 DEFAULT_SARSA = "Q_sarsa_20260704_115834_main.npy"
@@ -47,13 +49,42 @@ def list_models(cfg) -> list[Path]:
     return sorted(models_dir.glob("Q_*.npy"), key=lambda p: p.stat().st_mtime, reverse=True)
 
 
+def models_for_agent(agent: str, all_models: list[Path]) -> list[Path]:
+    """Filter model files by agent type inferred from the filename."""
+    name = agent.lower()
+    if name == "sarsa":
+        filtered = [p for p in all_models if "sarsa" in p.name.lower()]
+    elif name == "double_q_learning":
+        filtered = [p for p in all_models if "double_q" in p.name.lower()]
+    else:
+        filtered = [
+            p for p in all_models
+            if "q_learning" in p.name.lower()
+            and "double_q" not in p.name.lower()
+            and "sarsa" not in p.name.lower()
+        ]
+    return filtered or all_models
+
+
 @st.cache_resource
-def load_rl_agent(agent_name: str, model_path: str, cfg_hash: str):
+def load_rl_agent(agent_name: str, model_path: str, _cache_key: str):
     cfg = load_config()
-    agent = make_agent(agent_name, cfg)
-    agent.q = agent.q.load(Path(model_path))
-    agent.epsilon = 0.0
-    return agent
+    return load_trained_agent(agent_name, Path(model_path), cfg)
+
+
+def greedy_policy_fn(thresholds, cfg):
+    def policy(env: MicrogridEnv) -> int:
+        row = env.episode_df.iloc[env._step_idx]
+        return greedy_self_consumption_action(
+            env._soc_pct,
+            float(row["pv_kwh"]),
+            float(row["load_kwh"]),
+            thresholds,
+            min_soc_pct=cfg.min_soc_pct,
+            max_soc_pct=cfg.max_soc_pct,
+        )
+
+    return policy
 
 
 def rule_policy_fn(thresholds):
@@ -69,11 +100,12 @@ def rule_policy_fn(thresholds):
     return policy
 
 
-def plot_day(traces: dict[str, pd.DataFrame], episode_df: pd.DataFrame) -> plt.Figure:
-    """Four-panel day view: load/PV, price, SOC trajectories, and action timeline."""
+def plot_day(traces: dict[str, pd.DataFrame], episode_df: pd.DataFrame, retail_margin: float) -> plt.Figure:
+    """Four-panel day view: load/PV, wholesale and retail price, SOC, and actions."""
     fig, axes = plt.subplots(4, 1, figsize=(10, 11), sharex=True)
 
     hours = episode_df["timestamp"].apply(lambda t: t.hour + t.minute / 60.0)
+    retail_price = episode_df["price_per_kwh"] + retail_margin
 
     ax = axes[0]
     ax.plot(hours, episode_df["pv_kwh"], label="Solar (kWh)", color="#facc15")
@@ -81,11 +113,13 @@ def plot_day(traces: dict[str, pd.DataFrame], episode_df: pd.DataFrame) -> plt.F
     ax.set_ylabel("Energy (kWh)")
     ax.legend(loc="upper right", fontsize=8)
     ax.grid(True, alpha=0.3)
-    ax.set_title("Solar & load")
+    ax.set_title("Solar and load")
 
     ax = axes[1]
-    ax.plot(hours, episode_df["price_per_kwh"], color="#ef4444")
+    ax.plot(hours, episode_df["price_per_kwh"], label="Wholesale", color="#ef4444", linestyle="--")
+    ax.plot(hours, retail_price, label=f"Retail (+{retail_margin:.2f})", color="#b91c1c")
     ax.set_ylabel("Price (AUD/kWh)")
+    ax.legend(loc="upper right", fontsize=8)
     ax.grid(True, alpha=0.3)
     ax.set_title("Grid price")
 
@@ -116,30 +150,31 @@ def plot_day(traces: dict[str, pd.DataFrame], episode_df: pd.DataFrame) -> plt.F
 
 def format_summary(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
-    out["total_reward"] = out["total_reward"].map(lambda x: f"{x:.3f}")
-    out["grid_cost_aud"] = out["grid_cost_aud"].map(lambda x: f"{x:.4f}")
-    out["grid_import_kwh"] = out["grid_import_kwh"].map(lambda x: f"{x:.3f}")
-    out["solar_waste_kwh"] = out["solar_waste_kwh"].map(lambda x: f"{x:.3f}")
-    out["final_soc_pct"] = out["final_soc_pct"].map(lambda x: f"{x:.1f}")
+    if "total_reward" in out.columns:
+        out["total_reward"] = out["total_reward"].map(lambda x: f"{x:.3f}")
+    if "grid_cost_aud" in out.columns:
+        out["grid_cost_aud"] = out["grid_cost_aud"].map(lambda x: f"{x:.4f}")
+    if "grid_import_kwh" in out.columns:
+        out["grid_import_kwh"] = out["grid_import_kwh"].map(lambda x: f"{x:.3f}")
+    if "solar_waste_kwh" in out.columns:
+        out["solar_waste_kwh"] = out["solar_waste_kwh"].map(lambda x: f"{x:.3f}")
+    if "final_soc_pct" in out.columns:
+        out["final_soc_pct"] = out["final_soc_pct"].map(lambda x: f"{x:.1f}")
+    if "self_consumption_rate" in out.columns:
+        out["self_consumption_rate"] = out["self_consumption_rate"].map(lambda x: f"{x:.1%}")
+    if "self_sufficiency" in out.columns:
+        out["self_sufficiency"] = out["self_sufficiency"].map(lambda x: f"{x:.1%}")
+    if "evening_peak_import_kwh" in out.columns:
+        out["evening_peak_import_kwh"] = out["evening_peak_import_kwh"].map(lambda x: f"{x:.3f}")
     return out
 
 
 def format_trace(df: pd.DataFrame) -> pd.DataFrame:
-    out = df[
-        [
-            "step",
-            "time_label",
-            "action",
-            "soc_pct",
-            "pv_kwh",
-            "load_kwh",
-            "price_per_kwh",
-            "grid_import_kwh",
-            "solar_waste_kwh",
-            "reward",
-            "state",
-        ]
-    ].copy()
+    cols = [
+        "step", "time_label", "action", "soc_pct", "pv_kwh", "load_kwh",
+        "price_per_kwh", "grid_import_kwh", "solar_waste_kwh", "reward", "state",
+    ]
+    out = df[[c for c in cols if c in df.columns]].copy()
     out["soc_pct"] = out["soc_pct"].map(lambda x: f"{x:.1f}")
     out["pv_kwh"] = out["pv_kwh"].map(lambda x: f"{x:.3f}")
     out["load_kwh"] = out["load_kwh"].map(lambda x: f"{x:.3f}")
@@ -150,13 +185,25 @@ def format_trace(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _model_selectbox(label: str, agent: str, models: list[Path], default_name: str) -> str | None:
+    names = [p.name for p in models]
+    if not names:
+        return None
+    default = default_name if default_name in names else names[0]
+    return st.selectbox(label, names, index=names.index(default))
+
+
 def main() -> None:
     st.set_page_config(page_title="GreineGrid_Qagent", layout="wide")
-    st.title("GreineGrid_Qagent — Digital Twin")
-    st.caption("Replay home battery dispatch on real Ausgrid + AEMO data (Customer 1)")
+
+    if "view" not in st.session_state:
+        st.session_state.view = "home"
 
     try:
-        _render_app()
+        if st.session_state.view == "home":
+            _render_landing()
+        else:
+            _render_app()
     except Exception as exc:
         st.error(f"Dashboard failed to load: {exc}")
         st.info(
@@ -167,68 +214,130 @@ def main() -> None:
         )
 
 
-def _render_app() -> None:
-    """Main dashboard layout: sidebar controls, summary metrics, and replay tabs."""
+@st.cache_data(show_spinner="Building demo animation (first load may take ~30 s)...")
+def get_demo_gif(_version: str) -> bytes:
     cfg, df, split, thresholds = load_resources()
-    models = list_models(cfg)
-    model_names = [p.name for p in models]
+    test_days = sorted(split.test)
+    day = pick_demo_day(df, test_days)
+    episode_df = get_episode(df, day)
+    policy = greedy_policy_fn(thresholds, cfg)
+    trace, _ = trace_episode(episode_df, thresholds, policy, cfg)
+    cache_path = cfg.artifacts_dir / "demo_dispatch.gif"
+    return build_demo_gif(
+        trace, episode_df, day, cfg.tariff.retail_margin_per_kwh, fps=4, cache_path=cache_path
+    )
+
+
+def _render_landing() -> None:
+    st.title("GreineGrid_Qagent")
+    st.caption("Reinforcement learning for home battery dispatch · Ausgrid + AEMO data")
+
+    intro, action = st.columns([5, 2])
+    with intro:
+        st.markdown(
+            "Each day is a **48-step episode** (30-minute intervals). At every step the agent "
+            "observes battery state, solar generation, household load, and grid price, then selects "
+            "one of three actions: **hold**, **charge** from surplus solar, or **discharge** to meet load."
+        )
+    with action:
+        if st.button("Open Digital Twin →", type="primary", use_container_width=True):
+            st.session_state.view = "twin"
+            st.rerun()
+
+    st.divider()
+    anim_col, legend_col = st.columns([7, 3])
+
+    with anim_col:
+        st.subheader("Animated dispatch demo")
+        st.image(
+            get_demo_gif("v1"),
+            caption="Sunny test day replay — greedy self-consumption policy",
+        )
+
+    with legend_col:
+        st.subheader("Actions")
+        st.markdown(
+            "**Charge** — store surplus solar  \n\n"
+            "**Discharge** — offset household load  \n\n"
+            "**Hold** — no battery operation"
+        )
+        st.subheader("Timeline grid")
+        st.markdown(
+            "The 4×12 grid maps the full day (like a [Frozen Lake](https://gymnasium.farama.org/environments/toy_text/frozen_lake/) "
+            "grid world). Each cell is one 30-minute interval; colour shows the action taken. "
+            "The highlighted cell is the current step."
+        )
+        st.subheader("State space")
+        st.markdown(
+            "SOC, PV, load, price, and time-of-day are discretised into **324 tabular states** "
+            "for Q-Learning and SARSA."
+        )
+
+    st.divider()
+    if st.button("Launch interactive replay", use_container_width=False):
+        st.session_state.view = "twin"
+        st.rerun()
+
+
+def _render_app() -> None:
+    cfg, df, split, thresholds = load_resources()
+    all_models = list_models(cfg)
+
+    q_models = models_for_agent("q_learning", all_models)
+    sarsa_models = models_for_agent("sarsa", all_models)
+    dq_models = models_for_agent("double_q_learning", all_models)
 
     with st.sidebar:
-        st.header("Settings")
+        if st.button("← Back to overview"):
+            st.session_state.view = "home"
+            st.rerun()
+        st.header("Digital Twin")
         split_name = st.selectbox("Day split", ["test", "val", "train"], index=0)
         days = sorted(split.days(split_name))  # type: ignore[arg-type]
         day = st.selectbox("Episode day", days)
         reward_mode = st.selectbox("Reward mode", ["battery_aware", "cost_only"])
 
         st.subheader("Policies")
-        show_rule = st.checkbox("Rule baseline", value=True)
+        show_greedy = st.checkbox("Greedy self-consumption", value=True)
+        show_rule = st.checkbox("Rule baseline (tertile)", value=False)
         show_q = st.checkbox("Q-Learning", value=True)
-        show_sarsa = st.checkbox("SARSA", value=True)
+        show_sarsa = st.checkbox("SARSA", value=False)
+        show_dq = st.checkbox("Double Q-Learning", value=False)
 
-        q_default = DEFAULT_Q if DEFAULT_Q in model_names else (model_names[0] if model_names else "")
-        sarsa_default = DEFAULT_SARSA if DEFAULT_SARSA in model_names else (
-            model_names[1] if len(model_names) > 1 else q_default
-        )
-
-        if (show_q or show_sarsa) and not model_names:
+        need_models = show_q or show_sarsa or show_dq
+        if need_models and not all_models:
             st.error("No trained models in results/models/. Run training first.")
-            show_q = False
-            show_sarsa = False
+            show_q = show_sarsa = show_dq = False
 
-        q_model_name = (
-            st.selectbox(
-                "Q-Learning model",
-                model_names,
-                index=model_names.index(q_default) if q_default in model_names else 0,
-            )
-            if show_q and model_names
-            else None
-        )
+        q_model_name = _model_selectbox("Q-Learning model", "q_learning", q_models, DEFAULT_Q) if show_q else None
         sarsa_model_name = (
-            st.selectbox(
-                "SARSA model",
-                model_names,
-                index=model_names.index(sarsa_default) if sarsa_default in model_names else 0,
-            )
-            if show_sarsa and model_names
-            else None
+            _model_selectbox("SARSA model", "sarsa", sarsa_models, DEFAULT_SARSA) if show_sarsa else None
         )
+        dq_model_name = _model_selectbox("Double Q-Learning model", "double_q_learning", dq_models, "") if show_dq else None
 
         show_q_table = st.checkbox("Show Q-values for selected step", value=False)
 
     episode_df = get_episode(df, day)
-    policies: dict[str, object] = {}
+    no_bat = no_battery_import_cost(episode_df, cfg)
+    oracle = oracle_perfect_foresight_import(episode_df, cfg)
 
+    st.title("Digital Twin")
+    st.caption(f"Replay and compare policies · Customer {cfg.primary_customer_id}")
+
+    policies: dict[str, object] = {}
+    if show_greedy:
+        policies["Greedy SC"] = greedy_policy_fn(thresholds, cfg)
     if show_rule:
-        policies["Rule"] = rule_policy_fn(thresholds)
+        policies["Rule (tertile)"] = rule_policy_fn(thresholds)
     if show_q and q_model_name:
-        q_path = cfg.results_models / q_model_name
-        q_agent = load_rl_agent("q_learning", str(q_path), q_model_name)
+        q_agent = load_rl_agent("q_learning", str(cfg.results_models / q_model_name), q_model_name)
         policies["Q-Learning"] = greedy_action_fn(q_agent)
     if show_sarsa and sarsa_model_name:
-        s_path = cfg.results_models / sarsa_model_name
-        s_agent = load_rl_agent("sarsa", str(s_path), sarsa_model_name)
+        s_agent = load_rl_agent("sarsa", str(cfg.results_models / sarsa_model_name), sarsa_model_name)
         policies["SARSA"] = greedy_action_fn(s_agent)
+    if show_dq and dq_model_name:
+        dq_agent = load_rl_agent("double_q_learning", str(cfg.results_models / dq_model_name), dq_model_name)
+        policies["Double Q-Learning"] = greedy_action_fn(dq_agent)
 
     if not policies:
         st.warning("Select at least one policy in the sidebar.")
@@ -245,12 +354,24 @@ def _render_app() -> None:
 
     summary_df = pd.DataFrame(summaries).set_index("policy")
     st.subheader(f"Day summary — {day} ({split_name})")
-    st.dataframe(
-        format_summary(summary_df[["total_reward", "grid_cost_aud", "grid_import_kwh", "solar_waste_kwh", "final_soc_pct"]]),
-        width="stretch",
-    )
 
-    fig = plot_day(traces, episode_df)
+    bound_cols = st.columns(3)
+    bound_cols[0].metric("No battery (import cost)", f"{no_bat:.2f} AUD")
+    bound_cols[1].metric("Oracle (perfect foresight)", f"{oracle:.2f} AUD")
+    span = no_bat - oracle
+    if span > 0 and summaries:
+        best = min(s["grid_cost_aud"] for s in summaries)
+        bound_cols[2].metric("Best policy capture", f"{(no_bat - best) / span * 100:.1f}% of oracle gap")
+
+    display_cols = [
+        c for c in [
+            "total_reward", "grid_cost_aud", "grid_import_kwh", "solar_waste_kwh",
+            "self_consumption_rate", "self_sufficiency", "evening_peak_import_kwh", "final_soc_pct",
+        ] if c in summary_df.columns
+    ]
+    st.dataframe(format_summary(summary_df[display_cols]), width="stretch")
+
+    fig = plot_day(traces, episode_df, cfg.tariff.retail_margin_per_kwh)
     st.pyplot(fig, clear_figure=True)
     plt.close(fig)
 
@@ -280,6 +401,7 @@ def _render_app() -> None:
             "episode_day": day,
             "split": split_name,
             "reward_mode": reward_mode,
+            "bounds": {"no_battery_cost_aud": no_bat, "oracle_cost_aud": oracle},
             "summaries": summaries,
             "traces": {name: t.to_dict(orient="records") for name, t in traces.items()},
         }
