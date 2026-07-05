@@ -1,4 +1,4 @@
-"""GreineGrid_Qagent — Streamlit digital twin dashboard."""
+"""GréineQ — Streamlit digital twin dashboard."""
 
 from __future__ import annotations
 
@@ -194,7 +194,7 @@ def _model_selectbox(label: str, agent: str, models: list[Path], default_name: s
 
 
 def main() -> None:
-    st.set_page_config(page_title="GreineGrid_Qagent", layout="wide")
+    st.set_page_config(page_title="GréineQ", layout="wide")
 
     if "view" not in st.session_state:
         st.session_state.view = "home"
@@ -229,7 +229,7 @@ def get_demo_gif(_version: str) -> bytes:
 
 
 def _render_landing() -> None:
-    st.title("GreineGrid_Qagent")
+    st.title("GréineQ")
     st.caption("Reinforcement learning for home battery dispatch · Ausgrid + AEMO data")
 
     intro, action = st.columns([5, 2])
@@ -263,9 +263,8 @@ def _render_landing() -> None:
         )
         st.subheader("Timeline grid")
         st.markdown(
-            "The 4×12 grid maps the full day (like a [Frozen Lake](https://gymnasium.farama.org/environments/toy_text/frozen_lake/) "
-            "grid world). Each cell is one 30-minute interval; colour shows the action taken. "
-            "The highlighted cell is the current step."
+            "Each cell is one 30-minute interval across the day. Colour indicates the "
+            "action at that step; the highlighted cell is the current timestep."
         )
         st.subheader("State space")
         st.markdown(
@@ -408,7 +407,7 @@ def _render_app() -> None:
         st.download_button(
             "Download replay JSON",
             data=json.dumps(export_payload, indent=2, default=str),
-            file_name=f"GreineGrid_Qagent_replay_{day}.json",
+            file_name=f"GreineQ_replay_{day}.json",
             mime="application/json",
         )
 

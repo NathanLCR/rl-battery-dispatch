@@ -1,4 +1,4 @@
-# GreineGrid_Qagent — project configuration
+# GréineQ — project configuration
 
 data:
   merged_csv: data/merged_30min_v2.csv
