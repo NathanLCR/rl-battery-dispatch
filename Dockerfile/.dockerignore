@@ -1,0 +1,26 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.git/
+.gitignore
+.DS_Store
+Thumbs.db
+
+# Raw datasets — not needed at dashboard runtime (only merged CSV is used)
+aemo/
+Ausgrid_solar_home_data/
+
+# Mount at runtime; do not bake into the image
+results/
+artifacts/
+data/merged_30min_v2.csv
+
+# Local dev / notebooks
+*.ipynb
+.ipynb_checkpoints/
+dashboard/step_*.txt
+
+# Docker build metadata (not app runtime)
+Dockerfile/docker-compose*.yml
+Dockerfile/.dockerignore

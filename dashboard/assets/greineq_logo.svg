@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 182 58" role="img" aria-label="GréineQ">
+  <defs>
+    <linearGradient id="gq-orange" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fde68a"/>
+      <stop offset="45%" stop-color="#f59e1a"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+    <linearGradient id="gq-green" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#4ade80"/>
+      <stop offset="100%" stop-color="#16a34a"/>
+    </linearGradient>
+    <radialGradient id="gq-sun" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fde68a"/>
+      <stop offset="70%" stop-color="#f59e1a"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </radialGradient>
+    <filter id="gq-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="1.2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Fixed text width keeps E/Q aligned across font fallbacks -->
+  <text x="0" y="44"
+        font-family="Barlow Condensed, Arial Narrow, Arial, sans-serif"
+        font-size="40" font-weight="700"
+        textLength="114" lengthAdjust="spacingAndGlyphs"
+        fill="url(#gq-orange)">GR&#201;IN</text>
+
+  <!-- Battery-style E -->
+  <g transform="translate(115, 6)" fill="url(#gq-orange)">
+    <rect x="6" y="-3" width="8" height="2.8" rx="0.7" opacity="0.92"/>
+    <rect x="0" y="0" width="3.5" height="38" rx="0.9"/>
+    <rect x="0" y="1" width="21" height="3.2" rx="0.9"/>
+    <rect x="1" y="1.65" width="15" height="1.9" rx="0.5" fill="url(#gq-green)" opacity="0.5"/>
+    <rect x="0" y="17" width="16.5" height="3.2" rx="0.9"/>
+    <rect x="1" y="17.65" width="8.5" height="1.9" rx="0.5" fill="url(#gq-green)" opacity="0.44"/>
+    <rect x="0" y="33" width="21" height="3.2" rx="0.9"/>
+    <rect x="1" y="33.65" width="11.5" height="1.9" rx="0.5" fill="url(#gq-green)" opacity="0.4"/>
+  </g>
+
+  <!-- Solar Q -->
+  <g transform="translate(138, 6)">
+    <circle cx="17" cy="17" r="15.5" fill="none" stroke="#f1f5f9" stroke-width="3.5"/>
+    <path d="M26.5 26.5 L34.5 34.5" stroke="#f1f5f9" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="17" cy="17" r="6.5" fill="url(#gq-sun)" filter="url(#gq-glow)"/>
+  </g>
+</svg>
