@@ -54,4 +54,6 @@ GréineQ_RL_Colab.ipynb
 
 # Agent scratch exports (not for repo)
 dashboard/step_*.txt
-dashboard/assets/
+# Keep brand logo in git; ignore other generated assets in this folder
+dashboard/assets/*
+!dashboard/assets/greineq_logo.svg
