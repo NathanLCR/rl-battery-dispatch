@@ -1,0 +1,56 @@
+# GréineQ — project configuration
+
+data:
+  merged_csv: data/merged_30min_v2.csv
+  day_split_json: data/day_split.json
+  primary_customer_id: 1
+  steps_per_episode: 48
+
+battery:
+  capacity_kwh: 10.0
+  initial_soc_pct: 50.0
+  max_charge_kw: 5.0
+  max_discharge_kw: 5.0
+  soc_low_pct: 30.0
+  soc_high_pct: 70.0
+  min_soc_pct: 10.0
+  max_soc_pct: 90.0
+
+discretizer:
+  n_bins: 3
+  n_time_periods: 4
+
+training:
+  alpha: 0.1
+  gamma: 0.95
+  epsilon: 0.1
+  epsilon_min: 0.01
+  epsilon_decay: 0.999
+  n_episodes: 10000
+  random_seed: 42
+  alpha_decay: 0.9995   # per-episode Robbins-Monro decay (1.0 = fixed alpha)
+  alpha_min: 0.01
+
+# Tariff (AUD/kWh): retail import = wholesale spot + margin; curtailed solar at feed-in rate.
+tariff:
+  retail_margin_per_kwh: 0.22
+  feed_in_per_kwh: 0.06
+  battery_deg_cost_per_kwh: 0.05
+
+reward:
+  cost_only:
+    w_grid_cost: 1.0
+    w_solar_waste: 1.0
+    w_battery_deg: 0.0
+    w_invalid_action: 0.1
+  battery_aware:
+    w_grid_cost: 1.0
+    w_solar_waste: 1.0
+    w_battery_deg: 1.0
+    w_invalid_action: 0.1
+
+paths:
+  artifacts: artifacts
+  results_logs: results/logs
+  results_models: results/models
+  results_plots: results/plots
