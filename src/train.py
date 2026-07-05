@@ -273,7 +273,7 @@ def greedy_action_fn(agent):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train GreineGrid_Qagent RL agent")
+    parser = argparse.ArgumentParser(description="Train GréineQ RL agent")
     parser.add_argument(
         "--agent",
         choices=["q_learning", "sarsa", "double_q_learning"],

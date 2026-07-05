@@ -1,4 +1,4 @@
-"""Frozen-Lake-style day dispatch animation for the dashboard landing page."""
+"""Day dispatch timeline animation for the dashboard landing page."""
 
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ def render_frame(ax, trace: pd.DataFrame, episode_df: pd.DataFrame, step_idx: in
     time_label = row["time_label"]
     ac = ACTION_COLORS.get(action, "#64748b")
 
-    ax.text(5.0, 10.25, f"GreineGrid dispatch  ·  {day}", ha="center", fontsize=12, fontweight="bold")
+    ax.text(5.0, 10.25, f"GréineQ dispatch  ·  {day}", ha="center", fontsize=12, fontweight="bold")
 
     sun_r = 0.35 + min(1.2, pv * 2.5)
     ax.add_patch(plt.Circle((1.2, 7.2), sun_r, color="#facc15", ec="#ca8a04", lw=2))

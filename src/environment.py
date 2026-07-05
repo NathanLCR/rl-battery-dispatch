@@ -1,4 +1,4 @@
-"""Microgrid battery environment — custom MDP for GreineGrid_Qagent."""
+"""Microgrid battery environment — custom MDP for GréineQ."""
 
 from __future__ import annotations
 
