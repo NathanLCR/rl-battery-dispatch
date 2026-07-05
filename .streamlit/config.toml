@@ -7,3 +7,13 @@ address = "localhost"
 gatherUsageStats = false
 serverAddress = "localhost"
 serverPort = 8501
+
+[client]
+toolbarMode = "minimal"
+
+[theme]
+primaryColor = "#C6923A"
+backgroundColor = "#FBF6EA"
+secondaryBackgroundColor = "#F1EAD9"
+textColor = "#37475A"
+font = "sans serif"

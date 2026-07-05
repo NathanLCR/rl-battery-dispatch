@@ -11,9 +11,12 @@ import matplotlib.patches as mpatches
 from matplotlib.animation import FuncAnimation, PillowWriter
 import pandas as pd
 
-ACTION_COLORS = {"hold": "#94a3b8", "charge": "#22c55e", "discharge": "#f97316"}
+ACTION_COLORS = {"hold": "#93A3B5", "charge": "#5FB07E", "discharge": "#E68A4E"}
 ACTION_LABELS = {"hold": "HOLD", "charge": "CHARGE", "discharge": "DISCHARGE"}
 GRID_ROWS, GRID_COLS = 4, 12  # 48 half-hour steps
+
+NAVY = "#37475A"
+SLATE = "#6C7A88"
 
 
 def pick_demo_day(df: pd.DataFrame, days: list[str]) -> str:
@@ -41,8 +44,8 @@ def _draw_timeline_grid(ax, trace: pd.DataFrame, step_idx: int) -> None:
         cx = x0 + col * (cell_w + gap)
         cy = map_y0 + (GRID_ROWS - 1 - row) * (cell_h + gap)
         action = trace.iloc[i]["action"]
-        fc = ACTION_COLORS.get(action, "#cbd5e1")
-        ec = "#0f172a" if i == step_idx else "#94a3b8"
+        fc = ACTION_COLORS.get(action, "#CBD5E1")
+        ec = "#37475A" if i == step_idx else "#B9CADC"
         lw = 2.8 if i == step_idx else 0.8
         ax.add_patch(mpatches.FancyBboxPatch(
             (cx, cy), cell_w, cell_h, boxstyle="round,pad=0.02",
@@ -68,38 +71,39 @@ def render_frame(ax, trace: pd.DataFrame, episode_df: pd.DataFrame, step_idx: in
     wholesale = float(row["price_per_kwh"])
     retail = wholesale + margin
     time_label = row["time_label"]
-    ac = ACTION_COLORS.get(action, "#64748b")
+    ac = ACTION_COLORS.get(action, "#93A3B5")
 
-    ax.text(5.0, 10.25, f"GréineQ dispatch  ·  {day}", ha="center", fontsize=12, fontweight="bold")
+    ax.text(5.0, 10.25, f"GréineQ dispatch  ·  {day}", ha="center", fontsize=12,
+            fontweight="bold", color=NAVY)
 
     sun_r = 0.35 + min(1.2, pv * 2.5)
-    ax.add_patch(plt.Circle((1.2, 7.2), sun_r, color="#facc15", ec="#ca8a04", lw=2))
-    ax.text(1.2, 5.55, "Solar", ha="center", fontsize=9, color="#854d0e")
+    ax.add_patch(plt.Circle((1.2, 7.2), sun_r, color="#E6C074", ec="#C6923A", lw=2))
+    ax.text(1.2, 5.55, "Solar", ha="center", fontsize=9, color="#6B531B")
 
     bx, by, bw, bh = 3.6, 5.8, 1.4, 2.8
     ax.add_patch(mpatches.FancyBboxPatch(
-        (bx, by), bw, bh, boxstyle="round,pad=0.02", fc="#e2e8f0", ec="#475569", lw=2
+        (bx, by), bw, bh, boxstyle="round,pad=0.02", fc="#EDE7DB", ec="#5E7690", lw=2
     ))
     fill_h = max(0.05, bh * soc / 100.0)
     ax.add_patch(mpatches.Rectangle(
         (bx + 0.08, by + 0.08), bw - 0.16, fill_h - 0.08,
         fc=ac, ec="none", alpha=0.85,
     ))
-    ax.add_patch(mpatches.Rectangle((bx + bw * 0.35, by + bh), bw * 0.3, 0.25, fc="#475569"))
-    ax.text(bx + bw / 2, by - 0.35, f"Battery\n{soc:.0f}%", ha="center", fontsize=9)
+    ax.add_patch(mpatches.Rectangle((bx + bw * 0.35, by + bh), bw * 0.3, 0.25, fc="#5E7690"))
+    ax.text(bx + bw / 2, by - 0.35, f"Battery\n{soc:.0f}%", ha="center", fontsize=9, color=NAVY)
 
     hx, hy = 6.4, 6.0
     ax.add_patch(mpatches.Polygon(
         [[hx, hy + 1.6], [hx + 1.2, hy + 0.9], [hx + 2.4, hy + 1.6], [hx + 2.4, hy], [hx, hy]],
-        closed=True, fc="#6366f1", ec="#4338ca", lw=2,
+        closed=True, fc="#5E7690", ec="#3B4A5C", lw=2,
     ))
-    ax.text(hx + 1.2, hy - 0.45, f"Load\n{load:.2f} kWh", ha="center", fontsize=9, color="#312e81")
+    ax.text(hx + 1.2, hy - 0.45, f"Load\n{load:.2f} kWh", ha="center", fontsize=9, color=NAVY)
 
     ax.add_patch(mpatches.FancyBboxPatch(
-        (8.2, 6.2), 1.4, 1.8, boxstyle="round,pad=0.02", fc="#fee2e2", ec="#dc2626", lw=2
+        (8.2, 6.2), 1.4, 1.8, boxstyle="round,pad=0.02", fc="#F2E3DA", ec="#C08A6A", lw=2
     ))
-    ax.text(8.9, 7.1, f"${retail:.2f}", ha="center", fontsize=10, fontweight="bold", color="#991b1b")
-    ax.text(8.9, 5.7, f"Grid\n{grid:.2f} kWh", ha="center", fontsize=8)
+    ax.text(8.9, 7.1, f"${retail:.2f}", ha="center", fontsize=10, fontweight="bold", color="#9A552A")
+    ax.text(8.9, 5.7, f"Grid\n{grid:.2f} kWh", ha="center", fontsize=8, color=SLATE)
 
     if action == "charge" and pv > load:
         ax.annotate("", xy=(bx, 7.5), xytext=(1.8, 7.5),
@@ -113,16 +117,16 @@ def render_frame(ax, trace: pd.DataFrame, episode_df: pd.DataFrame, step_idx: in
     ))
     ax.text(5.0, 9.37, ACTION_LABELS.get(action, action.upper()), ha="center", va="center",
             fontsize=13, fontweight="bold", color="white")
-    ax.text(5.0, 8.55, f"Step {step_idx + 1}/48  ·  {time_label}", ha="center", fontsize=10)
+    ax.text(5.0, 8.55, f"Step {step_idx + 1}/48  ·  {time_label}", ha="center", fontsize=10, color=NAVY)
 
-    ax.text(5.0, 4.35, "Daily timeline — each cell is one 30-minute interval", ha="center", fontsize=9, color="#64748b")
+    ax.text(5.0, 4.35, "Daily timeline — each cell is one 30-minute interval", ha="center", fontsize=9, color=SLATE)
     _draw_timeline_grid(ax, trace, step_idx)
 
     legend_y = 0.08
     for j, (name, color) in enumerate(ACTION_COLORS.items()):
         lx = 2.2 + j * 2.2
         ax.add_patch(mpatches.Rectangle((lx, legend_y), 0.35, 0.35, fc=color))
-        ax.text(lx + 0.5, legend_y + 0.17, name.capitalize(), va="center", fontsize=8)
+        ax.text(lx + 0.5, legend_y + 0.17, name.capitalize(), va="center", fontsize=8, color=SLATE)
 
 
 def build_demo_gif(
@@ -138,7 +142,7 @@ def build_demo_gif(
         return cache_path.read_bytes()
 
     fig, ax = plt.subplots(figsize=(10, 7))
-    fig.patch.set_facecolor("#f8fafc")
+    fig.patch.set_facecolor("#FBF7EE")
 
     def update(frame: int):
         render_frame(ax, trace, episode_df, frame, retail_margin, day)

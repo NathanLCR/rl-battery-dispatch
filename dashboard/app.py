@@ -26,10 +26,16 @@ from src.replay import q_values_for_state, trace_episode
 from src.rule_baseline import greedy_self_consumption_action, rule_action
 from src.train import greedy_action_fn, load_trained_agent
 from dashboard.landing_animation import build_demo_gif, pick_demo_day
+from dashboard.landing_page import render_landing_body, render_landing_header
+from dashboard.theme import (
+    ACTION_COLORS,
+    HOLD,
+    inject_theme,
+    render_twin_banner,
+)
 
 DEFAULT_Q = "Q_q_learning_20260704_115627_main.npy"
 DEFAULT_SARSA = "Q_sarsa_20260704_115834_main.npy"
-ACTION_COLORS = {"hold": "#94a3b8", "charge": "#22c55e", "discharge": "#f97316"}
 
 
 @st.cache_resource
@@ -100,52 +106,110 @@ def rule_policy_fn(thresholds):
     return policy
 
 
-def plot_day(traces: dict[str, pd.DataFrame], episode_df: pd.DataFrame, retail_margin: float) -> plt.Figure:
-    """Four-panel day view: load/PV, wholesale and retail price, SOC, and actions."""
-    fig, axes = plt.subplots(4, 1, figsize=(10, 11), sharex=True)
+def plot_day(
+    traces: dict[str, pd.DataFrame],
+    episode_df: pd.DataFrame,
+    retail_margin: float,
+    *,
+    dark: bool = False,
+) -> plt.Figure:
+    """Four-panel day view: load/PV, price, SOC, and actions."""
+    if dark:
+        sunny = {
+            "figure.facecolor": "#0F172A",
+            "axes.facecolor": "#1E293B",
+            "axes.edgecolor": "#334155",
+            "axes.labelcolor": "#CBD5E1",
+            "text.color": "#E2E8F0",
+            "xtick.color": "#94A3B8",
+            "ytick.color": "#94A3B8",
+            "grid.color": "#334155",
+            "legend.facecolor": "#1E293B",
+            "legend.edgecolor": "#475569",
+            "legend.labelcolor": "#E2E8F0",
+        }
+        solar_color, load_color = "#FBBF24", "#38BDF8"
+        wholesale_color, retail_color = "#FB7185", "#F472B6"
+    else:
+        sunny = {
+            "figure.facecolor": "#FFFBEB",
+            "axes.facecolor": "#FFFDF7",
+            "axes.edgecolor": "#FDE68A",
+            "axes.labelcolor": "#78350F",
+            "text.color": "#78350F",
+            "xtick.color": "#92400E",
+            "ytick.color": "#92400E",
+            "grid.color": "#FDE68A",
+            "legend.framealpha": 0.92,
+        }
+        solar_color, load_color = "#F59E0B", "#0284C7"
+        wholesale_color, retail_color = "#FB7185", "#E11D48"
 
-    hours = episode_df["timestamp"].apply(lambda t: t.hour + t.minute / 60.0)
-    retail_price = episode_df["price_per_kwh"] + retail_margin
+    policy_colors = ["#FBBF24", "#38BDF8", "#22C55E", "#FB923C", "#A78BFA"]
 
-    ax = axes[0]
-    ax.plot(hours, episode_df["pv_kwh"], label="Solar (kWh)", color="#facc15")
-    ax.plot(hours, episode_df["load_kwh"], label="Load (kWh)", color="#6366f1")
-    ax.set_ylabel("Energy (kWh)")
-    ax.legend(loc="upper right", fontsize=8)
-    ax.grid(True, alpha=0.3)
-    ax.set_title("Solar and load")
+    with plt.rc_context(sunny):
+        fig, axes = plt.subplots(4, 1, figsize=(10, 11), sharex=True)
 
-    ax = axes[1]
-    ax.plot(hours, episode_df["price_per_kwh"], label="Wholesale", color="#ef4444", linestyle="--")
-    ax.plot(hours, retail_price, label=f"Retail (+{retail_margin:.2f})", color="#b91c1c")
-    ax.set_ylabel("Price (AUD/kWh)")
-    ax.legend(loc="upper right", fontsize=8)
-    ax.grid(True, alpha=0.3)
-    ax.set_title("Grid price")
+        hours = episode_df["timestamp"].apply(lambda t: t.hour + t.minute / 60.0)
+        retail_price = episode_df["price_per_kwh"] + retail_margin
 
-    ax = axes[2]
-    for name, trace in traces.items():
-        ax.plot(trace["step"], trace["soc_pct"], label=name, linewidth=1.8)
-    ax.set_ylabel("SOC (%)")
-    ax.set_ylim(0, 100)
-    ax.legend(loc="upper right", fontsize=8)
-    ax.grid(True, alpha=0.3)
-    ax.set_title("Battery state of charge")
+        ax = axes[0]
+        ax.fill_between(hours, episode_df["pv_kwh"], alpha=0.25, color=solar_color)
+        ax.plot(hours, episode_df["pv_kwh"], label="Solar (kWh)", color=solar_color, linewidth=2.2)
+        ax.plot(hours, episode_df["load_kwh"], label="Load (kWh)", color=load_color, linewidth=2.0)
+        ax.set_ylabel("Energy (kWh)")
+        ax.legend(loc="upper right", fontsize=8, frameon=True)
+        ax.grid(True, alpha=0.45)
+        ax.set_title("Solar and load", fontweight="600", pad=8)
 
-    ax = axes[3]
-    bar_w = 0.25
-    x = range(1, 49)
-    for i, (name, trace) in enumerate(traces.items()):
-        offset = (i - len(traces) / 2 + 0.5) * bar_w
-        colors = [ACTION_COLORS.get(a, "#64748b") for a in trace["action"]]
-        ax.bar([xi + offset for xi in x], [1] * 48, width=bar_w, color=colors, alpha=0.85, label=name)
-    ax.set_yticks([])
-    ax.set_xlabel("Step (30-min intervals)")
-    ax.set_title("Actions (green=charge, orange=discharge, grey=hold)")
-    ax.set_xlim(0.5, 48.5)
+        ax = axes[1]
+        ax.plot(hours, episode_df["price_per_kwh"], label="Wholesale", color=wholesale_color, linestyle="--", linewidth=1.6)
+        ax.plot(hours, retail_price, label=f"Retail (+{retail_margin:.2f})", color=retail_color, linewidth=2.0)
+        ax.set_ylabel("Price (AUD/kWh)")
+        ax.legend(loc="upper right", fontsize=8, frameon=True)
+        ax.grid(True, alpha=0.45)
+        ax.set_title("Grid price", fontweight="600", pad=8)
 
-    fig.tight_layout()
+        ax = axes[2]
+        for i, (name, trace) in enumerate(traces.items()):
+            ax.plot(
+                trace["step"],
+                trace["soc_pct"],
+                label=name,
+                linewidth=2.0,
+                color=policy_colors[i % len(policy_colors)],
+            )
+        ax.set_ylabel("SOC (%)")
+        ax.set_ylim(0, 100)
+        ax.legend(loc="upper right", fontsize=8, frameon=True)
+        ax.grid(True, alpha=0.45)
+        ax.set_title("Battery state of charge", fontweight="600", pad=8)
+
+        ax = axes[3]
+        bar_w = 0.25
+        x = range(1, 49)
+        for i, (name, trace) in enumerate(traces.items()):
+            offset = (i - len(traces) / 2 + 0.5) * bar_w
+            colors = [ACTION_COLORS.get(a, HOLD) for a in trace["action"]]
+            ax.bar([xi + offset for xi in x], [1] * 48, width=bar_w, color=colors, alpha=0.9, label=name)
+        ax.set_yticks([])
+        ax.set_xlabel("Step (30-min intervals)")
+        ax.set_title("Actions (green = charge, orange = discharge, grey = hold)", fontweight="600", pad=8)
+        ax.set_xlim(0.5, 48.5)
+
+        fig.tight_layout()
     return fig
+
+
+def _render_chart_panel_label(label: str = "Energy monitoring — live replay") -> None:
+    st.markdown(
+        f"""
+        <div class="gq-chart-panel">
+            <div class="gq-chart-panel-label">{label}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def format_summary(df: pd.DataFrame) -> pd.DataFrame:
@@ -194,15 +258,23 @@ def _model_selectbox(label: str, agent: str, models: list[Path], default_name: s
 
 
 def main() -> None:
-    st.set_page_config(page_title="GréineQ", layout="wide")
+    st.set_page_config(
+        page_title="GréineQ",
+        layout="wide",
+        page_icon="☀️",
+        initial_sidebar_state="expanded",
+    )
+    inject_theme()
 
     if "view" not in st.session_state:
         st.session_state.view = "home"
 
     try:
         if st.session_state.view == "home":
+            _hide_landing_sidebar()
             _render_landing()
         else:
+            _ensure_dashboard_sidebar()
             _render_app()
     except Exception as exc:
         st.error(f"Dashboard failed to load: {exc}")
@@ -214,68 +286,70 @@ def main() -> None:
         )
 
 
-@st.cache_data(show_spinner="Building demo animation (first load may take ~30 s)...")
-def get_demo_gif(_version: str) -> bytes:
+@st.cache_data(show_spinner="Loading agent walkthrough...")
+def get_demo_gif(_version: str) -> tuple[bytes, str]:
     cfg, df, split, thresholds = load_resources()
+    cache_path = cfg.artifacts_dir / f"demo_dispatch_{_version}.gif"
     test_days = sorted(split.test)
     day = pick_demo_day(df, test_days)
+    if cache_path.exists() and cache_path.stat().st_size > 0:
+        return cache_path.read_bytes(), day
+
     episode_df = get_episode(df, day)
     policy = greedy_policy_fn(thresholds, cfg)
     trace, _ = trace_episode(episode_df, thresholds, policy, cfg)
-    cache_path = cfg.artifacts_dir / "demo_dispatch.gif"
-    return build_demo_gif(
-        trace, episode_df, day, cfg.tariff.retail_margin_per_kwh, fps=4, cache_path=cache_path
+    gif = build_demo_gif(
+        trace, episode_df, day, cfg.tariff.retail_margin_per_kwh, fps=5, cache_path=cache_path
+    )
+    return gif, day
+
+
+def _hide_landing_sidebar() -> None:
+    """Overview is full-width; settings sidebar appears only inside the dashboard."""
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebar"],
+        [data-testid="stSidebarCollapsedControl"],
+        [data-testid="collapsedControl"] {
+            display: none !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _ensure_dashboard_sidebar() -> None:
+    """Keep replay/settings sidebar open while inside the digital twin."""
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebar"] {
+            display: block !important;
+            min-width: 20rem !important;
+            transform: translateX(0px) !important;
+            visibility: visible !important;
+        }
+        [data-testid="stSidebarCollapsedControl"],
+        [data-testid="collapsedControl"] {
+            display: flex !important;
+            visibility: visible !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
 
 
 def _render_landing() -> None:
-    st.title("GréineQ")
-    st.caption("Reinforcement learning for home battery dispatch · Ausgrid + AEMO data")
-
-    intro, action = st.columns([5, 2])
-    with intro:
-        st.markdown(
-            "Each day is a **48-step episode** (30-minute intervals). At every step the agent "
-            "observes battery state, solar generation, household load, and grid price, then selects "
-            "one of three actions: **hold**, **charge** from surplus solar, or **discharge** to meet load."
-        )
-    with action:
-        if st.button("Open Digital Twin →", type="primary", use_container_width=True):
-            st.session_state.view = "twin"
-            st.rerun()
-
-    st.divider()
-    anim_col, legend_col = st.columns([7, 3])
-
-    with anim_col:
-        st.subheader("Animated dispatch demo")
-        st.image(
-            get_demo_gif("v1"),
-            caption="Sunny test day replay — greedy self-consumption policy",
-        )
-
-    with legend_col:
-        st.subheader("Actions")
-        st.markdown(
-            "**Charge** — store surplus solar  \n\n"
-            "**Discharge** — offset household load  \n\n"
-            "**Hold** — no battery operation"
-        )
-        st.subheader("Timeline grid")
-        st.markdown(
-            "Each cell is one 30-minute interval across the day. Colour indicates the "
-            "action at that step; the highlighted cell is the current timestep."
-        )
-        st.subheader("State space")
-        st.markdown(
-            "SOC, PV, load, price, and time-of-day are discretised into **324 tabular states** "
-            "for Q-Learning and SARSA."
-        )
-
-    st.divider()
-    if st.button("Launch interactive replay", use_container_width=False):
+    if render_landing_header():
         st.session_state.view = "twin"
         st.rerun()
+
+    with st.spinner("Loading agent animation…"):
+        gif_bytes, demo_day = get_demo_gif("v5")
+    render_landing_body(gif_bytes, demo_day)
 
 
 def _render_app() -> None:
@@ -287,10 +361,14 @@ def _render_app() -> None:
     dq_models = models_for_agent("double_q_learning", all_models)
 
     with st.sidebar:
-        if st.button("← Back to overview"):
+        st.markdown("### Dashboard settings")
+        st.caption("Replay controls · policy comparison")
+
+        if st.button("← Back to Overview", width="stretch", key="back_overview"):
             st.session_state.view = "home"
             st.rerun()
-        st.header("Digital Twin")
+
+        st.markdown("---")
         split_name = st.selectbox("Day split", ["test", "val", "train"], index=0)
         days = sorted(split.days(split_name))  # type: ignore[arg-type]
         day = st.selectbox("Episode day", days)
@@ -320,8 +398,11 @@ def _render_app() -> None:
     no_bat = no_battery_import_cost(episode_df, cfg)
     oracle = oracle_perfect_foresight_import(episode_df, cfg)
 
-    st.title("Digital Twin")
-    st.caption(f"Replay and compare policies · Customer {cfg.primary_customer_id}")
+    st.markdown("---")
+    render_twin_banner(
+        "Industrial energy monitoring",
+        f"Policy replay · Customer {cfg.primary_customer_id} · {day} ({split_name})",
+    )
 
     policies: dict[str, object] = {}
     if show_greedy:
@@ -352,7 +433,7 @@ def _render_app() -> None:
         summaries.append(summary)
 
     summary_df = pd.DataFrame(summaries).set_index("policy")
-    st.subheader(f"Day summary — {day} ({split_name})")
+    st.markdown('<p class="gq-subheader">Day summary</p>', unsafe_allow_html=True)
 
     bound_cols = st.columns(3)
     bound_cols[0].metric("No battery (import cost)", f"{no_bat:.2f} AUD")
@@ -370,7 +451,8 @@ def _render_app() -> None:
     ]
     st.dataframe(format_summary(summary_df[display_cols]), width="stretch")
 
-    fig = plot_day(traces, episode_df, cfg.tariff.retail_margin_per_kwh)
+    _render_chart_panel_label("Energy monitoring — live replay")
+    fig = plot_day(traces, episode_df, cfg.tariff.retail_margin_per_kwh, dark=True)
     st.pyplot(fig, clear_figure=True)
     plt.close(fig)
 
@@ -412,5 +494,4 @@ def _render_app() -> None:
         )
 
 
-if __name__ == "__main__":
-    main()
+main()

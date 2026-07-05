@@ -51,3 +51,7 @@ desktop.ini
 
 # Personal reference (not for repo)
 GréineQ_RL_Colab.ipynb
+
+# Agent scratch exports (not for repo)
+dashboard/step_*.txt
+dashboard/assets/
