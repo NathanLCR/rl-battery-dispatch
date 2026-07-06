@@ -12,8 +12,8 @@ serverPort = 8501
 toolbarMode = "minimal"
 
 [theme]
-primaryColor = "#f59c1a"
-backgroundColor = "#070d1a"
-secondaryBackgroundColor = "#0c1424"
-textColor = "#e2e8f0"
+primaryColor = "#C6923A"
+backgroundColor = "#FBF6EA"
+secondaryBackgroundColor = "#F1EAD9"
+textColor = "#37475A"
 font = "sans serif"

@@ -1,6 +1,6 @@
 Set-Location $PSScriptRoot
 Write-Host ""
-Write-Host "GreineQ Dashboard" -ForegroundColor Cyan
+Write-Host "GréineQ Dashboard" -ForegroundColor Cyan
 Write-Host "==================" -ForegroundColor Cyan
 Write-Host ""
 

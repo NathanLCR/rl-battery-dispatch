@@ -2,6 +2,21 @@
 
 Tabular reinforcement learning for residential battery dispatch on a solar-connected microgrid. The agent learns when to **hold**, **charge** from surplus solar, or **discharge** to offset load, using Ausgrid half-hourly household data and AEMO NSW1 wholesale prices (Customer 1; 48 steps per day).
 
+## Live dashboard
+
+**Published instance:** [https://greineq-agent.sudocod.com/](https://greineq-agent.sudocod.com/)
+
+The landing page replays a full 48-step day with the Q-Agent control core, solar generation, battery SOC, and dispatch timeline. The interactive digital twin compares greedy self-consumption, rule-based, and trained RL policies on any train, validation, or test day.
+
+| View | Description |
+|------|-------------|
+| Landing / control core | Animated day replay, KPI strip, and dispatch timeline |
+| Interactive digital twin | Policy comparison charts, sidebar filters, Q-table inspection |
+
+![GréineQ landing page — control core and simulation replay](docs/screenshots/landing-control-core.png)
+
+![GréineQ digital twin — policy comparison dashboard](docs/screenshots/digital-twin-dashboard.png)
+
 ## Overview
 
 GréineQ provides a reproducible pipeline from raw metering data to trained dispatch policies:
@@ -63,7 +78,12 @@ Notebooks for dataset construction:
 │       └── double_q_learning.py
 ├── dashboard/
 │   ├── app.py               # Streamlit landing page and digital twin
+│   ├── dispatch_widget.py   # Q-Agent energy-flow animation widgets
+│   ├── landing_page.py      # Landing layout and hero
+│   ├── theme.py             # Shared CSS and header components
 │   └── landing_animation.py # Demo GIF builder
+├── Dockerfile/              # Docker Compose + nginx deploy (see Dockerfile/README.md)
+├── docs/screenshots/        # README dashboard screenshots
 ├── run_dashboard.ps1        # Windows launch script
 ├── data/
 ├── aemo/
@@ -143,6 +163,22 @@ streamlit run dashboard/app.py
 
 Open [http://localhost:8501](http://localhost:8501). The overview page shows an animated day replay; the digital-twin view compares greedy self-consumption, the tertile rule, and trained RL policies on any train, validation, or test day.
 
+### Docker deployment (production)
+
+See [Dockerfile/README.md](Dockerfile/README.md) for the full guide. From the repository root:
+
+```bash
+docker compose -f Dockerfile/docker-compose.yml up -d --build
+```
+
+With nginx reverse proxy:
+
+```bash
+docker compose -f Dockerfile/docker-compose.yml --profile with-nginx up -d --build
+```
+
+The published dashboard at [https://greineq-agent.sudocod.com/](https://greineq-agent.sudocod.com/) runs from this container setup.
+
 ## Configuration
 
 `config.yaml` controls:
@@ -177,7 +213,7 @@ State encoding uses four coarse time-of-day bins instead of the step index, trad
 - Grid-charging and export actions for price arbitrage under two-part tariffs
 - Finer SOC bins and daytime-only PV binning to reduce state aliasing
 - Stochastic extensions (forecast uncertainty, multi-day SOC carry-over)
-- Cloud-hosted dashboard with selectable households and tariff profiles
+- Additional hosted households and tariff profiles on the live dashboard
 
 ## License
 
