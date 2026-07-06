@@ -1,0 +1,30 @@
+services:
+  greineq:
+    build:
+      context: ..
+      dockerfile: Dockerfile/Dockerfile
+    container_name: greineq-dashboard
+    restart: unless-stopped
+    ports:
+      - "${GREINEQ_PORT:-8501}:8501"
+    volumes:
+      # Required (not in git): data/merged_30min_v2.csv, data/day_split.json
+      - ../data:/app/data:ro
+      # Optional: pre-built demo GIF cache (auto-created on first visit if missing)
+      - ../artifacts:/app/artifacts
+      # Optional: trained RL policies (Q_*.npy); app runs with Greedy only if empty
+      - ../results:/app/results:ro
+    mem_limit: 2g
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: greineq-nginx
+    profiles: ["with-nginx"]
+    restart: unless-stopped
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+    volumes:
+      - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      greineq:
+        condition: service_healthy

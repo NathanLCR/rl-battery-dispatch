@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
 echo.
-echo  GreineQ Dashboard
+echo  GréineQ Dashboard
 echo  ====================
 echo.
 

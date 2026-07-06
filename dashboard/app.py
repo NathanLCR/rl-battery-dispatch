@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import matplotlib
@@ -25,17 +27,70 @@ from src.oracle import no_battery_import_cost, oracle_perfect_foresight_import
 from src.replay import q_values_for_state, trace_episode
 from src.rule_baseline import greedy_self_consumption_action, rule_action
 from src.train import greedy_action_fn, load_trained_agent
-from dashboard.landing_animation import build_demo_gif, pick_demo_day
+from dashboard.landing_animation import pick_demo_day
 from dashboard.landing_page import render_landing_body, render_landing_header
 from dashboard.theme import (
     ACTION_COLORS,
     HOLD,
     inject_theme,
-    render_twin_banner,
+    render_demo_insight,
+    render_kpi_cards,
+    render_mission_topbar,
+    render_policy_note,
+    render_sidebar_footer,
+    render_sidebar_header,
 )
 
 DEFAULT_Q = "Q_q_learning_20260704_115627_main.npy"
 DEFAULT_SARSA = "Q_sarsa_20260704_115834_main.npy"
+
+SPLIT_LABELS = {
+    "test": "Test days",
+    "val": "Validation days",
+    "train": "Training days",
+}
+SIMULATION_DATASET_HELP = (
+    "Choose which group of historical days to replay. Test days were not used during "
+    "training and are best for final demonstration."
+)
+REWARD_LABELS = {
+    "battery_aware": "Cost + battery health reward",
+    "cost_only": "Grid cost only",
+}
+ACTION_DISPLAY = {
+    "hold": "Hold",
+    "charge": "Charge battery",
+    "discharge": "Discharge battery",
+}
+POLICY_MAIN_COLUMNS = {
+    "grid_cost_aud": "Cost (AUD)",
+    "grid_import_kwh": "Import (kWh)",
+    "self_consumption_rate": "Solar use (%)",
+    "self_sufficiency": "Self-suff. (%)",
+    "final_soc_pct": "Final SOC",
+}
+POLICY_DETAIL_COLUMNS = {
+    "total_reward": "Reward",
+    "solar_waste_kwh": "Waste (kWh)",
+    "evening_peak_import_kwh": "Evening import",
+}
+POLICY_TABLE_NOTE = (
+    "Lower grid cost is the main performance metric. Total reward is negative because the "
+    "reward function penalises grid cost, solar waste, and battery degradation."
+)
+TRACE_COLUMN_LABELS = {
+    "step": "Timestep",
+    "time_label": "Time of day",
+    "action": "Action",
+    "soc_pct": "Battery state of charge (%)",
+    "pv_kwh": "Solar generation (kWh)",
+    "load_kwh": "Household demand (kWh)",
+    "price_per_kwh": "Wholesale price (AUD/kWh)",
+    "grid_import_kwh": "Grid import (kWh)",
+    "solar_waste_kwh": "Solar waste (kWh)",
+    "reward": "Step reward",
+    "state": "State index",
+}
 
 
 @st.cache_resource
@@ -114,22 +169,26 @@ def plot_day(
     dark: bool = False,
 ) -> plt.Figure:
     """Four-panel day view: load/PV, price, SOC, and actions."""
+    n_steps = len(episode_df)
+    timesteps = list(range(1, n_steps + 1))
+    x_max = max(48, n_steps)
+
     if dark:
         sunny = {
-            "figure.facecolor": "#0F172A",
-            "axes.facecolor": "#1E293B",
-            "axes.edgecolor": "#334155",
-            "axes.labelcolor": "#CBD5E1",
-            "text.color": "#E2E8F0",
-            "xtick.color": "#94A3B8",
-            "ytick.color": "#94A3B8",
-            "grid.color": "#334155",
-            "legend.facecolor": "#1E293B",
-            "legend.edgecolor": "#475569",
-            "legend.labelcolor": "#E2E8F0",
+            "figure.facecolor": "#070d1a",
+            "axes.facecolor": "#0c1424",
+            "axes.edgecolor": "#1e293b",
+            "axes.labelcolor": "#94a3b8",
+            "text.color": "#e2e8f0",
+            "xtick.color": "#64748b",
+            "ytick.color": "#64748b",
+            "grid.color": "#1e293b",
+            "legend.facecolor": "#0c1424",
+            "legend.edgecolor": "#334155",
+            "legend.labelcolor": "#e2e8f0",
         }
-        solar_color, load_color = "#FBBF24", "#38BDF8"
-        wholesale_color, retail_color = "#FB7185", "#F472B6"
+        solar_color, load_color = "#f59c1a", "#6366f1"
+        wholesale_color, retail_color = "#f87171", "#fb923c"
     else:
         sunny = {
             "figure.facecolor": "#FFFBEB",
@@ -145,30 +204,35 @@ def plot_day(
         solar_color, load_color = "#F59E0B", "#0284C7"
         wholesale_color, retail_color = "#FB7185", "#E11D48"
 
-    policy_colors = ["#FBBF24", "#38BDF8", "#22C55E", "#FB923C", "#A78BFA"]
+    policy_colors = ["#f59c1a", "#6366f1", "#22c55e", "#fb923c", "#a78bfa"]
 
     with plt.rc_context(sunny):
-        fig, axes = plt.subplots(4, 1, figsize=(10, 11), sharex=True)
+        fig_h = 9.5 if len(traces) <= 2 else 10.5
+        fig, axes = plt.subplots(4, 1, figsize=(10, fig_h), sharex=True)
+        fig.subplots_adjust(hspace=0.38, top=0.98, bottom=0.08)
 
-        hours = episode_df["timestamp"].apply(lambda t: t.hour + t.minute / 60.0)
         retail_price = episode_df["price_per_kwh"] + retail_margin
+        legend_fs = 7 if len(traces) > 2 else 8
 
         ax = axes[0]
-        ax.fill_between(hours, episode_df["pv_kwh"], alpha=0.25, color=solar_color)
-        ax.plot(hours, episode_df["pv_kwh"], label="Solar (kWh)", color=solar_color, linewidth=2.2)
-        ax.plot(hours, episode_df["load_kwh"], label="Load (kWh)", color=load_color, linewidth=2.0)
-        ax.set_ylabel("Energy (kWh)")
-        ax.legend(loc="upper right", fontsize=8, frameon=True)
+        ax.fill_between(timesteps, episode_df["pv_kwh"], alpha=0.25, color=solar_color)
+        ax.plot(timesteps, episode_df["pv_kwh"], label="Solar generation", color=solar_color, linewidth=2.2)
+        ax.plot(timesteps, episode_df["load_kwh"], label="Household demand", color=load_color, linewidth=2.0)
+        ax.set_ylabel("Energy (kWh)", fontsize=9)
+        ax.legend(loc="upper right", fontsize=legend_fs, frameon=True, ncol=1)
         ax.grid(True, alpha=0.45)
-        ax.set_title("Solar and load", fontweight="600", pad=8)
+        ax.set_title("Solar generation and household demand", fontweight="600", pad=8, fontsize=10)
+        ax.set_xlim(0.5, x_max + 0.5)
+        ax.tick_params(labelsize=8)
 
         ax = axes[1]
-        ax.plot(hours, episode_df["price_per_kwh"], label="Wholesale", color=wholesale_color, linestyle="--", linewidth=1.6)
-        ax.plot(hours, retail_price, label=f"Retail (+{retail_margin:.2f})", color=retail_color, linewidth=2.0)
-        ax.set_ylabel("Price (AUD/kWh)")
-        ax.legend(loc="upper right", fontsize=8, frameon=True)
+        ax.plot(timesteps, episode_df["price_per_kwh"], label="Wholesale price", color=wholesale_color, linestyle="--", linewidth=1.6)
+        ax.plot(timesteps, retail_price, label="Estimated retail price", color=retail_color, linewidth=2.0)
+        ax.set_ylabel("Price (AUD/kWh)", fontsize=9)
+        ax.legend(loc="upper right", fontsize=legend_fs, frameon=True, ncol=1)
         ax.grid(True, alpha=0.45)
-        ax.set_title("Grid price", fontweight="600", pad=8)
+        ax.set_title("Electricity price", fontweight="600", pad=8, fontsize=10)
+        ax.tick_params(labelsize=8)
 
         ax = axes[2]
         for i, (name, trace) in enumerate(traces.items()):
@@ -179,29 +243,44 @@ def plot_day(
                 linewidth=2.0,
                 color=policy_colors[i % len(policy_colors)],
             )
-        ax.set_ylabel("SOC (%)")
+        ax.set_ylabel("Battery SOC (%)", fontsize=9)
         ax.set_ylim(0, 100)
-        ax.legend(loc="upper right", fontsize=8, frameon=True)
+        ax.legend(loc="upper right", fontsize=legend_fs, frameon=True, ncol=1)
         ax.grid(True, alpha=0.45)
-        ax.set_title("Battery state of charge", fontweight="600", pad=8)
+        ax.set_title("Battery state of charge (SOC)", fontweight="600", pad=8, fontsize=10)
+        ax.tick_params(labelsize=8)
 
         ax = axes[3]
         bar_w = 0.25
-        x = range(1, 49)
         for i, (name, trace) in enumerate(traces.items()):
             offset = (i - len(traces) / 2 + 0.5) * bar_w
             colors = [ACTION_COLORS.get(a, HOLD) for a in trace["action"]]
-            ax.bar([xi + offset for xi in x], [1] * 48, width=bar_w, color=colors, alpha=0.9, label=name)
+            xs = trace["step"].tolist()
+            ax.bar([xi + offset for xi in xs], [1] * len(xs), width=bar_w, color=colors, alpha=0.9, label=name)
         ax.set_yticks([])
-        ax.set_xlabel("Step (30-min intervals)")
-        ax.set_title("Actions (green = charge, orange = discharge, grey = hold)", fontweight="600", pad=8)
-        ax.set_xlim(0.5, 48.5)
+        ax.set_xlabel("Time of day (30-minute timesteps)", fontsize=9)
+        ax.set_title(
+            "Battery actions (grey = Hold, green = Charge, orange = Discharge)",
+            fontweight="600",
+            pad=8,
+            fontsize=9,
+        )
+        ax.set_xlim(0.5, x_max + 0.5)
+        ax.tick_params(labelsize=8)
+
+        tick_steps = [s for s in (1, 12, 24, 36, n_steps) if s <= n_steps]
+        tick_labels = []
+        for step in tick_steps:
+            ts = episode_df.iloc[step - 1]["timestamp"]
+            tick_labels.append(ts.strftime("%H:%M"))
+        axes[-1].set_xticks(tick_steps)
+        axes[-1].set_xticklabels(tick_labels, fontsize=7)
 
         fig.tight_layout()
     return fig
 
 
-def _render_chart_panel_label(label: str = "Energy monitoring — live replay") -> None:
+def _render_chart_panel_label(label: str = "Energy Flow Simulation Replay") -> None:
     st.markdown(
         f"""
         <div class="gq-chart-panel">
@@ -212,33 +291,64 @@ def _render_chart_panel_label(label: str = "Energy monitoring — live replay") 
     )
 
 
-def format_summary(df: pd.DataFrame) -> pd.DataFrame:
-    out = df.copy()
-    if "total_reward" in out.columns:
-        out["total_reward"] = out["total_reward"].map(lambda x: f"{x:.3f}")
-    if "grid_cost_aud" in out.columns:
-        out["grid_cost_aud"] = out["grid_cost_aud"].map(lambda x: f"{x:.4f}")
-    if "grid_import_kwh" in out.columns:
-        out["grid_import_kwh"] = out["grid_import_kwh"].map(lambda x: f"{x:.3f}")
-    if "solar_waste_kwh" in out.columns:
-        out["solar_waste_kwh"] = out["solar_waste_kwh"].map(lambda x: f"{x:.3f}")
-    if "final_soc_pct" in out.columns:
-        out["final_soc_pct"] = out["final_soc_pct"].map(lambda x: f"{x:.1f}")
-    if "self_consumption_rate" in out.columns:
-        out["self_consumption_rate"] = out["self_consumption_rate"].map(lambda x: f"{x:.1%}")
-    if "self_sufficiency" in out.columns:
-        out["self_sufficiency"] = out["self_sufficiency"].map(lambda x: f"{x:.1%}")
-    if "evening_peak_import_kwh" in out.columns:
-        out["evening_peak_import_kwh"] = out["evening_peak_import_kwh"].map(lambda x: f"{x:.3f}")
-    return out
+def _format_action(action: str) -> str:
+    return ACTION_DISPLAY.get(str(action).lower(), str(action))
+
+
+def _format_policy_metric(column: str, value: object) -> str:
+    x = float(value)
+    if column == "total_reward":
+        return f"{x:.3f}"
+    if column == "grid_cost_aud":
+        return f"{x:.2f}"
+    if column in ("grid_import_kwh", "solar_waste_kwh", "evening_peak_import_kwh"):
+        return f"{x:.2f}"
+    if column in ("self_consumption_rate", "self_sufficiency"):
+        return f"{x * 100:.1f}%"
+    if column == "final_soc_pct":
+        return f"{x:.1f}%"
+    return str(value)
+
+
+def build_policy_display_table(
+    summary_df: pd.DataFrame,
+    metric_cols: list[str],
+    column_labels: dict[str, str],
+) -> pd.DataFrame:
+    """Format policy summary metrics for presentation tables."""
+    out = summary_df.reset_index()
+    if "policy" in out.columns:
+        out = out.rename(columns={"policy": "Policy"})
+    keep = ["Policy"] + [c for c in metric_cols if c in out.columns]
+    out = out[keep].copy()
+    for col in metric_cols:
+        if col in out.columns:
+            out[col] = out[col].map(lambda v, c=col: _format_policy_metric(c, v))
+    rename = {"Policy": "Policy", **{k: column_labels[k] for k in metric_cols if k in column_labels}}
+    return out.rename(columns=rename)
+
+
+def render_policy_comparison_table(summary_df: pd.DataFrame) -> None:
+    """Main policy metrics table plus optional detailed metrics expander."""
+    main_metrics = [c for c in POLICY_MAIN_COLUMNS if c in summary_df.columns]
+    main_table = build_policy_display_table(summary_df, main_metrics, POLICY_MAIN_COLUMNS)
+    st.table(main_table)
+
+    detail_metrics = [c for c in POLICY_DETAIL_COLUMNS if c in summary_df.columns]
+    if detail_metrics:
+        with st.expander("Detailed metrics", expanded=False):
+            detail_table = build_policy_display_table(summary_df, detail_metrics, POLICY_DETAIL_COLUMNS)
+            st.table(detail_table)
 
 
 def format_trace(df: pd.DataFrame) -> pd.DataFrame:
     cols = [
         "step", "time_label", "action", "soc_pct", "pv_kwh", "load_kwh",
-        "price_per_kwh", "grid_import_kwh", "solar_waste_kwh", "reward", "state",
+        "price_per_kwh", "grid_import_kwh", "solar_waste_kwh", "reward",
     ]
     out = df[[c for c in cols if c in df.columns]].copy()
+    if "action" in out.columns:
+        out["action"] = out["action"].map(_format_action)
     out["soc_pct"] = out["soc_pct"].map(lambda x: f"{x:.1f}")
     out["pv_kwh"] = out["pv_kwh"].map(lambda x: f"{x:.3f}")
     out["load_kwh"] = out["load_kwh"].map(lambda x: f"{x:.3f}")
@@ -246,20 +356,59 @@ def format_trace(df: pd.DataFrame) -> pd.DataFrame:
     out["grid_import_kwh"] = out["grid_import_kwh"].map(lambda x: f"{x:.3f}")
     out["solar_waste_kwh"] = out["solar_waste_kwh"].map(lambda x: f"{x:.3f}")
     out["reward"] = out["reward"].map(lambda x: f"{x:.4f}")
-    return out
+    rename = {k: v for k, v in TRACE_COLUMN_LABELS.items() if k in out.columns}
+    return out.rename(columns=rename)
 
 
-def _model_selectbox(label: str, agent: str, models: list[Path], default_name: str) -> str | None:
+def _friendly_model_label(path: Path, agent_label: str) -> str:
+    """Turn a Q-table filename into a presentation-friendly label."""
+    match = re.search(r"(\d{8})", path.stem)
+    if match:
+        trained = datetime.strptime(match.group(1), "%Y%m%d").strftime("%d %b %Y")
+        return f"{agent_label} model — trained {trained}"
+    return f"{agent_label} model"
+
+
+def _demo_insight(summary_df: pd.DataFrame) -> str:
+    """Build a short insight about the best policy on the selected day."""
+    if summary_df.empty:
+        return (
+            "Key observation: Compare greedy self-consumption, rule-based baseline, and RL policies "
+            "to see how each strategy manages solar generation, battery state of charge (SOC), and grid import."
+        )
+    best = summary_df["grid_cost_aud"].idxmin()
+    greedy = "Greedy self-consumption baseline"
+    if best == greedy:
+        return (
+            "Key observation: On this simulation day, the greedy self-consumption baseline achieves the "
+            "lowest grid cost by using available solar energy directly and minimising grid import. "
+            "Q-Learning still demonstrates learned battery-dispatch behaviour, although its performance "
+            "is limited by the coarse state discretisation used in the tabular model."
+        )
+    return (
+        f"Key observation: On this simulation day, **{best}** achieves the lowest grid cost among the "
+        f"selected policies. Compare against the greedy self-consumption baseline and rule-based baseline "
+        f"to see how learned dispatch differs from hand-crafted heuristics."
+    )
+
+
+def _model_selectbox(label: str, agent_label: str, models: list[Path], default_name: str) -> str | None:
     names = [p.name for p in models]
     if not names:
         return None
     default = default_name if default_name in names else names[0]
-    return st.selectbox(label, names, index=names.index(default))
+    by_name = {p.name: p for p in models}
+    return st.selectbox(
+        label,
+        names,
+        index=names.index(default),
+        format_func=lambda n: _friendly_model_label(by_name[n], agent_label),
+    )
 
 
 def main() -> None:
     st.set_page_config(
-        page_title="GréineQ",
+        page_title="GréineQ Microgrid Control",
         layout="wide",
         page_icon="☀️",
         initial_sidebar_state="expanded",
@@ -286,22 +435,19 @@ def main() -> None:
         )
 
 
-@st.cache_data(show_spinner="Loading agent walkthrough...")
-def get_demo_gif(_version: str) -> tuple[bytes, str]:
+DEMO_VERSION = "live-html-v1"
+
+
+@st.cache_data(show_spinner="Loading agent animation…")
+def get_demo_trace(_version: str) -> tuple[object, str]:
+    """Load one-day greedy-SC trace for the landing dispatch animation."""
     cfg, df, split, thresholds = load_resources()
-    cache_path = cfg.artifacts_dir / f"demo_dispatch_{_version}.gif"
     test_days = sorted(split.test)
     day = pick_demo_day(df, test_days)
-    if cache_path.exists() and cache_path.stat().st_size > 0:
-        return cache_path.read_bytes(), day
-
     episode_df = get_episode(df, day)
     policy = greedy_policy_fn(thresholds, cfg)
     trace, _ = trace_episode(episode_df, thresholds, policy, cfg)
-    gif = build_demo_gif(
-        trace, episode_df, day, cfg.tariff.retail_margin_per_kwh, fps=5, cache_path=cache_path
-    )
-    return gif, day
+    return trace, day
 
 
 def _hide_landing_sidebar() -> None:
@@ -321,20 +467,17 @@ def _hide_landing_sidebar() -> None:
 
 
 def _ensure_dashboard_sidebar() -> None:
-    """Keep replay/settings sidebar open while inside the digital twin."""
+    """Keep replay/settings sidebar open on laptop/desktop; allow collapse on small screens."""
     st.markdown(
         """
         <style>
-        [data-testid="stSidebar"] {
-            display: block !important;
-            min-width: 20rem !important;
-            transform: translateX(0px) !important;
-            visibility: visible !important;
-        }
-        [data-testid="stSidebarCollapsedControl"],
-        [data-testid="collapsedControl"] {
-            display: flex !important;
-            visibility: visible !important;
+        @media (min-width: 768px) {
+            [data-testid="stSidebar"] {
+                display: block !important;
+                min-width: min(20rem, 28vw) !important;
+                transform: translateX(0px) !important;
+                visibility: visible !important;
+            }
         }
         </style>
         """,
@@ -348,8 +491,65 @@ def _render_landing() -> None:
         st.rerun()
 
     with st.spinner("Loading agent animation…"):
-        gif_bytes, demo_day = get_demo_gif("v5")
-    render_landing_body(gif_bytes, demo_day)
+        trace, demo_day = get_demo_trace(DEMO_VERSION)
+    render_landing_body(trace, demo_day)
+
+
+def _simulate_episode(
+    cfg,
+    df: pd.DataFrame,
+    thresholds,
+    *,
+    day: str,
+    reward_mode: str,
+    show_greedy: bool,
+    show_rule: bool,
+    show_q: bool,
+    show_sarsa: bool,
+    show_dq: bool,
+    q_model_name: str | None,
+    sarsa_model_name: str | None,
+    dq_model_name: str | None,
+) -> tuple[pd.DataFrame | None, dict[str, object], dict[str, pd.DataFrame], list[dict], float, float, int]:
+    """Build policy traces for the selected simulation day (unchanged RL pipeline)."""
+    step_count = len(df[df["episode_day"] == day])
+    if step_count != 48:
+        return None, {}, {}, [], 0.0, 0.0, step_count
+
+    try:
+        episode_df = get_episode(df, day)
+    except ValueError:
+        return None, {}, {}, [], 0.0, 0.0, step_count
+
+    no_bat = no_battery_import_cost(episode_df, cfg)
+    oracle = oracle_perfect_foresight_import(episode_df, cfg)
+
+    policies: dict[str, object] = {}
+    if show_greedy:
+        policies["Greedy self-consumption baseline"] = greedy_policy_fn(thresholds, cfg)
+    if show_rule:
+        policies["Rule-based baseline"] = rule_policy_fn(thresholds)
+    if show_q and q_model_name:
+        q_agent = load_rl_agent("q_learning", str(cfg.results_models / q_model_name), q_model_name)
+        policies["Q-Learning"] = greedy_action_fn(q_agent)
+    if show_sarsa and sarsa_model_name:
+        s_agent = load_rl_agent("sarsa", str(cfg.results_models / sarsa_model_name), sarsa_model_name)
+        policies["SARSA"] = greedy_action_fn(s_agent)
+    if show_dq and dq_model_name:
+        dq_agent = load_rl_agent("double_q_learning", str(cfg.results_models / dq_model_name), dq_model_name)
+        policies["Double Q-Learning"] = greedy_action_fn(dq_agent)
+
+    traces: dict[str, pd.DataFrame] = {}
+    summaries: list[dict] = []
+    if policies:
+        for name, policy in policies.items():
+            trace, summary = trace_episode(episode_df, thresholds, policy, cfg, reward_mode)
+            trace["policy"] = name
+            traces[name] = trace
+            summary["policy"] = name
+            summaries.append(summary)
+
+    return episode_df, policies, traces, summaries, no_bat, oracle, step_count
 
 
 def _render_app() -> None:
@@ -361,121 +561,213 @@ def _render_app() -> None:
     dq_models = models_for_agent("double_q_learning", all_models)
 
     with st.sidebar:
-        st.markdown("### Dashboard settings")
-        st.caption("Replay controls · policy comparison")
+        render_sidebar_header()
 
-        if st.button("← Back to Overview", width="stretch", key="back_overview"):
+        with st.container(key="sidebar_scroll"):
+            split_name = st.selectbox(
+                "Simulation dataset",
+                ["test", "val", "train"],
+                index=0,
+                format_func=lambda x: SPLIT_LABELS.get(x, x),
+                help=SIMULATION_DATASET_HELP,
+            )
+            days = sorted(split.days(split_name))  # type: ignore[arg-type]
+            day = st.selectbox("Simulation day", days)
+            reward_mode = st.selectbox(
+                "Reward function",
+                ["battery_aware", "cost_only"],
+                index=0,
+                format_func=lambda x: REWARD_LABELS.get(x, x),
+            )
+
+            st.subheader("Policies to compare")
+            show_greedy = st.checkbox("Greedy self-consumption baseline", value=True)
+            show_rule = st.checkbox("Rule-based baseline", value=False)
+            show_q = st.checkbox("Q-Learning", value=True)
+            show_sarsa = st.checkbox("SARSA", value=False)
+            show_dq = st.checkbox("Double Q-Learning", value=False)
+
+            need_models = show_q or show_sarsa or show_dq
+            if need_models and not all_models:
+                st.error("No trained models in results/models/. Run training first.")
+                show_q = show_sarsa = show_dq = False
+
+            q_model_name = (
+                _model_selectbox("Selected Q-Learning model", "Q-Learning", q_models, DEFAULT_Q) if show_q else None
+            )
+            sarsa_model_name = (
+                _model_selectbox("Selected SARSA model", "SARSA", sarsa_models, DEFAULT_SARSA) if show_sarsa else None
+            )
+            dq_model_name = (
+                _model_selectbox("Selected Double Q-Learning model", "Double Q-Learning", dq_models, "")
+                if show_dq
+                else None
+            )
+
+            show_q_table = st.checkbox("Show learned Q-values for selected timestep", value=False)
+
+            if show_q or show_sarsa or show_dq:
+                with st.expander("Technical details", expanded=False):
+                    if show_q and q_model_name:
+                        st.caption(f"Q-Learning file: `{q_model_name}`")
+                    if show_sarsa and sarsa_model_name:
+                        st.caption(f"SARSA file: `{sarsa_model_name}`")
+                    if show_dq and dq_model_name:
+                        st.caption(f"Double Q-Learning file: `{dq_model_name}`")
+
+        if render_sidebar_footer():
             st.session_state.view = "home"
             st.rerun()
 
-        st.markdown("---")
-        split_name = st.selectbox("Day split", ["test", "val", "train"], index=0)
-        days = sorted(split.days(split_name))  # type: ignore[arg-type]
-        day = st.selectbox("Episode day", days)
-        reward_mode = st.selectbox("Reward mode", ["battery_aware", "cost_only"])
-
-        st.subheader("Policies")
-        show_greedy = st.checkbox("Greedy self-consumption", value=True)
-        show_rule = st.checkbox("Rule baseline (tertile)", value=False)
-        show_q = st.checkbox("Q-Learning", value=True)
-        show_sarsa = st.checkbox("SARSA", value=False)
-        show_dq = st.checkbox("Double Q-Learning", value=False)
-
-        need_models = show_q or show_sarsa or show_dq
-        if need_models and not all_models:
-            st.error("No trained models in results/models/. Run training first.")
-            show_q = show_sarsa = show_dq = False
-
-        q_model_name = _model_selectbox("Q-Learning model", "q_learning", q_models, DEFAULT_Q) if show_q else None
-        sarsa_model_name = (
-            _model_selectbox("SARSA model", "sarsa", sarsa_models, DEFAULT_SARSA) if show_sarsa else None
-        )
-        dq_model_name = _model_selectbox("Double Q-Learning model", "double_q_learning", dq_models, "") if show_dq else None
-
-        show_q_table = st.checkbox("Show Q-values for selected step", value=False)
-
-    episode_df = get_episode(df, day)
-    no_bat = no_battery_import_cost(episode_df, cfg)
-    oracle = oracle_perfect_foresight_import(episode_df, cfg)
-
-    st.markdown("---")
-    render_twin_banner(
-        "Industrial energy monitoring",
-        f"Policy replay · Customer {cfg.primary_customer_id} · {day} ({split_name})",
+    episode_df, policies, traces, summaries, no_bat, oracle, step_count = _simulate_episode(
+        cfg,
+        df,
+        thresholds,
+        day=day,
+        reward_mode=reward_mode,
+        show_greedy=show_greedy,
+        show_rule=show_rule,
+        show_q=show_q,
+        show_sarsa=show_sarsa,
+        show_dq=show_dq,
+        q_model_name=q_model_name,
+        sarsa_model_name=sarsa_model_name,
+        dq_model_name=dq_model_name,
     )
 
-    policies: dict[str, object] = {}
-    if show_greedy:
-        policies["Greedy SC"] = greedy_policy_fn(thresholds, cfg)
-    if show_rule:
-        policies["Rule (tertile)"] = rule_policy_fn(thresholds)
-    if show_q and q_model_name:
-        q_agent = load_rl_agent("q_learning", str(cfg.results_models / q_model_name), q_model_name)
-        policies["Q-Learning"] = greedy_action_fn(q_agent)
-    if show_sarsa and sarsa_model_name:
-        s_agent = load_rl_agent("sarsa", str(cfg.results_models / sarsa_model_name), sarsa_model_name)
-        policies["SARSA"] = greedy_action_fn(s_agent)
-    if show_dq and dq_model_name:
-        dq_agent = load_rl_agent("double_q_learning", str(cfg.results_models / dq_model_name), dq_model_name)
-        policies["Double Q-Learning"] = greedy_action_fn(dq_agent)
+    if step_count != 48:
+        st.warning("This simulation day has incomplete interval data.")
+        if step_count == 0:
+            st.error("No interval data is available for this simulation day.")
+            return
 
-    if not policies:
-        st.warning("Select at least one policy in the sidebar.")
+    if episode_df is None:
+        st.error(f"This simulation day has incomplete interval data ({step_count}/48 intervals).")
         return
 
-    traces: dict[str, pd.DataFrame] = {}
-    summaries: list[dict] = []
-    for name, policy in policies.items():
-        trace, summary = trace_episode(episode_df, thresholds, policy, cfg, reward_mode)
-        trace["policy"] = name
-        traces[name] = trace
-        summary["policy"] = name
-        summaries.append(summary)
+    if not policies:
+        st.warning("Select at least one policy to compare in the sidebar.")
+        return
+
+    split_label = SPLIT_LABELS.get(split_name, split_name)
+    preview_name = next(
+        (
+            n
+            for n in (
+                "Q-Learning",
+                "Greedy self-consumption baseline",
+                "SARSA",
+                "Double Q-Learning",
+                "Rule-based baseline",
+            )
+            if n in traces
+        ),
+        next(iter(traces), None),
+    )
+    preview_trace = traces.get(preview_name) if preview_name else None
+    render_mission_topbar(
+        "GréineQ Microgrid Control Dashboard",
+        f"Household {cfg.primary_customer_id} · Simulation day: {day} · {split_label}",
+        preview_trace=preview_trace,
+    )
 
     summary_df = pd.DataFrame(summaries).set_index("policy")
-    st.markdown('<p class="gq-subheader">Day summary</p>', unsafe_allow_html=True)
+    best_row = summary_df.loc[summary_df["grid_cost_aud"].idxmin()] if len(summary_df) else None
 
-    bound_cols = st.columns(3)
-    bound_cols[0].metric("No battery (import cost)", f"{no_bat:.2f} AUD")
-    bound_cols[1].metric("Oracle (perfect foresight)", f"{oracle:.2f} AUD")
+    pv_total = float(episode_df["pv_kwh"].sum())
+    if best_row is not None:
+        render_kpi_cards([
+            (
+                "Daily grid cost",
+                f"{best_row['grid_cost_aud']:.2f} AUD",
+                f"Best possible cost: {oracle:.2f} AUD",
+                "Estimated cost of electricity imported from the grid for the selected day.",
+            ),
+            (
+                "Energy imported from grid",
+                f"{best_row['grid_import_kwh']:.2f} kWh",
+                f"No-battery cost: {no_bat:.2f} AUD",
+                "Total energy bought from the grid after solar and battery actions.",
+            ),
+            (
+                "End-of-day battery charge",
+                f"{best_row.get('final_soc_pct', 0):.0f}%",
+                "Battery charge remaining at the end of the day",
+                "Battery state of charge (SOC) at the end of the simulation day.",
+            ),
+            (
+                "Solar self-consumption rate",
+                f"{best_row.get('self_consumption_rate', 0):.0%}",
+                f"Solar energy used on-site: {pv_total:.1f} kWh",
+                "Percentage of generated solar energy used locally instead of wasted or exported.",
+            ),
+        ])
+    else:
+        bound_cols = st.columns(2)
+        bound_cols[0].metric(
+            "No-battery baseline cost",
+            f"{no_bat:.2f} AUD",
+            help="Grid import cost if no battery were available.",
+        )
+        bound_cols[1].metric(
+            "Best possible cost",
+            f"{oracle:.2f} AUD",
+            help="Theoretical best result using perfect future knowledge; used only as a benchmark.",
+        )
+
+    st.markdown('<p class="gq-subheader">Policy Performance Comparison</p>', unsafe_allow_html=True)
+
     span = no_bat - oracle
     if span > 0 and summaries:
         best = min(s["grid_cost_aud"] for s in summaries)
-        bound_cols[2].metric("Best policy capture", f"{(no_bat - best) / span * 100:.1f}% of oracle gap")
+        st.caption(
+            f"Best policy captures {(no_bat - best) / span * 100:.1f}% of available oracle savings."
+        )
 
-    display_cols = [
-        c for c in [
-            "total_reward", "grid_cost_aud", "grid_import_kwh", "solar_waste_kwh",
-            "self_consumption_rate", "self_sufficiency", "evening_peak_import_kwh", "final_soc_pct",
-        ] if c in summary_df.columns
-    ]
-    st.dataframe(format_summary(summary_df[display_cols]), width="stretch")
+    render_policy_comparison_table(summary_df)
+    render_policy_note(POLICY_TABLE_NOTE)
+    render_demo_insight(_demo_insight(summary_df))
 
-    _render_chart_panel_label("Energy monitoring — live replay")
+    _render_chart_panel_label("Energy Flow Simulation Replay")
     fig = plot_day(traces, episode_df, cfg.tariff.retail_margin_per_kwh, dark=True)
-    st.pyplot(fig, clear_figure=True)
+    st.pyplot(fig, clear_figure=True, width="stretch")
     plt.close(fig)
+    if episode_df[["pv_kwh", "load_kwh"]].isna().any().any():
+        st.caption("Some intervals contain missing solar or load data for this simulation day.")
+    else:
+        st.caption(
+            "All 48 half-hour timesteps are plotted. Solar generation drops to zero after sunset; "
+            "household demand continues through the evening."
+        )
 
-    tab_compare, tab_steps, tab_export = st.tabs(["Action comparison", "Step log", "Export"])
+    tab_compare, tab_steps, tab_export = st.tabs(["Actions", "Step Log", "Export"])
 
     with tab_compare:
-        compare = pd.DataFrame({"step": range(1, 49), "time": traces[list(traces.keys())[0]]["time_label"]})
+        ref_trace = traces[list(traces.keys())[0]]
+        compare = pd.DataFrame({
+            "Timestep": ref_trace["step"],
+            "Time of day": ref_trace["time_label"],
+        })
         for name, trace in traces.items():
-            compare[name] = trace["action"]
+            compare[name] = trace["action"].map(_format_action)
         st.dataframe(compare, width="stretch", height=400)
 
     with tab_steps:
-        policy_pick = st.selectbox("Policy trace", list(traces.keys()))
+        policy_pick = st.selectbox("Selected policy", list(traces.keys()))
         trace = traces[policy_pick]
         st.dataframe(format_trace(trace), width="stretch", height=420)
 
         if show_q_table and show_q and q_model_name:
-            step_idx = st.slider("Step for Q-value lookup", 1, 48, 24) - 1
-            state = int(trace.iloc[step_idx]["state"])
-            q_agent = load_rl_agent("q_learning", str(cfg.results_models / q_model_name), q_model_name)
-            q_vals = q_values_for_state(q_agent.q, state)
-            st.write(f"State index **{state}** at step {step_idx + 1} ({trace.iloc[step_idx]['time_label']})")
-            st.json(q_vals)
+            with st.expander("Q-value lookup (technical)", expanded=False):
+                step_idx = st.slider("Timestep for Q-value lookup", 1, 48, 24) - 1
+                state = int(trace.iloc[step_idx]["state"])
+                q_agent = load_rl_agent("q_learning", str(cfg.results_models / q_model_name), q_model_name)
+                q_vals = q_values_for_state(q_agent.q, state)
+                st.markdown(
+                    f"Discretised state index **{state}** at timestep {step_idx + 1} "
+                    f"({trace.iloc[step_idx]['time_label']})"
+                )
+                st.json(q_vals)
 
     with tab_export:
         export_payload = {
@@ -487,7 +779,7 @@ def _render_app() -> None:
             "traces": {name: t.to_dict(orient="records") for name, t in traces.items()},
         }
         st.download_button(
-            "Download replay JSON",
+            "Download simulation data (JSON)",
             data=json.dumps(export_payload, indent=2, default=str),
             file_name=f"GreineQ_replay_{day}.json",
             mime="application/json",
