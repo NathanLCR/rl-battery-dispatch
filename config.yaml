@@ -43,11 +43,13 @@ reward:
     w_solar_waste: 1.0
     w_battery_deg: 0.0
     w_invalid_action: 0.1
+    w_export_revenue: 1.0  # CA2: credit for arbitrage export (GRID_CHARGE/EXPORT actions)
   battery_aware:
     w_grid_cost: 1.0
     w_solar_waste: 1.0
     w_battery_deg: 1.0
     w_invalid_action: 0.1
+    w_export_revenue: 1.0  # CA2: credit for arbitrage export (GRID_CHARGE/EXPORT actions)
 
 paths:
   artifacts: artifacts

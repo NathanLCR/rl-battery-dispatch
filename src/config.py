@@ -19,6 +19,7 @@ class RewardWeights:
     w_solar_waste: float
     w_battery_deg: float
     w_invalid_action: float
+    w_export_revenue: float = 1.0
 
 
 @dataclass
@@ -79,6 +80,7 @@ def load_config(path: Path | None = None) -> Config:
             w_solar_waste=block["w_solar_waste"],
             w_battery_deg=block["w_battery_deg"],
             w_invalid_action=block["w_invalid_action"],
+            w_export_revenue=block.get("w_export_revenue", 1.0),
         )
 
     root = cfg_path.parent

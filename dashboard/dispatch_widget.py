@@ -87,6 +87,8 @@ def _render_landing_control_centre(trace, demo_day: str = "") -> None:
   .action-pill.hold {{ background: #64748b; box-shadow: 0 0 16px rgba(100,116,139,0.35); }}
   .action-pill.charge {{ background: #22c55e; box-shadow: 0 0 18px rgba(34,197,94,0.4); }}
   .action-pill.discharge {{ background: #f59e1a; box-shadow: 0 0 18px rgba(245,156,26,0.45); }}
+  .action-pill.grid_charge {{ background: #0ea5e9; box-shadow: 0 0 18px rgba(14,165,233,0.45); }}
+  .action-pill.export {{ background: #a855f7; box-shadow: 0 0 18px rgba(168,85,247,0.45); }}
   .stats {{
     display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.4rem;
     margin-bottom: 0.35rem;
@@ -198,6 +200,8 @@ def _render_landing_control_centre(trace, demo_day: str = "") -> None:
   .conn.discharge .conn-pulse {{ background: #f59e1a; box-shadow: 0 0 8px #f59e1a; }}
   .conn.hold .conn-pulse {{ background: #64748b; box-shadow: 0 0 6px #64748b; }}
   .conn.solar .conn-pulse {{ background: #fbbf24; box-shadow: 0 0 8px #fbbf24; }}
+  .conn.grid_charge .conn-pulse {{ background: #0ea5e9; box-shadow: 0 0 8px #0ea5e9; }}
+  .conn.export .conn-pulse {{ background: #a855f7; box-shadow: 0 0 8px #a855f7; }}
   @keyframes flow {{ 0% {{ left: -30%; }} 100% {{ left: 100%; }} }}
   .solar-node {{ grid-column: 1; grid-row: 2; }}
   .batt-node {{ grid-column: 5; grid-row: 2; }}
@@ -220,6 +224,8 @@ def _render_landing_control_centre(trace, demo_day: str = "") -> None:
   .cell.charge {{ background: #22c55e; }}
   .cell.discharge {{ background: #f59e1a; }}
   .cell.hold {{ background: #64748b; }}
+  .cell.grid_charge {{ background: #0ea5e9; }}
+  .cell.export {{ background: #a855f7; }}
   .cell.active {{
     opacity: 1; transform: scale(1.12); z-index: 1; position: relative;
     box-shadow: 0 0 0 2px #f8fafc, 0 0 12px rgba(245,156,26,0.55);
@@ -331,11 +337,17 @@ def _render_landing_control_centre(trace, demo_day: str = "") -> None:
     <span><i style="background:#64748b"></i>Hold</span>
     <span><i style="background:#22c55e"></i>Charge battery</span>
     <span><i style="background:#f59e1a"></i>Discharge battery</span>
+    <span><i style="background:#0ea5e9"></i>Grid-charge (arbitrage)</span>
+    <span><i style="background:#a855f7"></i>Export to grid (arbitrage)</span>
   </div>
 </div>
 <script>
 const DATA = {data_json};
-const ACTION_LABELS = {{ hold: 'Hold', charge: 'Charge battery', discharge: 'Discharge battery' }};
+const ACTION_LABELS = {{
+  hold: 'Hold', charge: 'Charge battery', discharge: 'Discharge battery',
+  grid_charge: 'Grid-charge (arbitrage)', export: 'Export to grid (arbitrage)'
+}};
+const KNOWN_ACTIONS = new Set(['hold', 'charge', 'discharge', 'grid_charge', 'export']);
 const actions = DATA.actions.length ? DATA.actions : Array(48).fill('hold');
 const times = DATA.times.length ? DATA.times : [];
 const soc = DATA.soc.length ? DATA.soc : Array(48).fill(30);
@@ -349,7 +361,7 @@ if (DATA.day) document.getElementById('day-label').textContent = DATA.day;
 const timeline = document.getElementById('timeline');
 actions.forEach((a, i) => {{
   const c = document.createElement('div');
-  c.className = 'cell ' + (a === 'charge' ? 'charge' : a === 'discharge' ? 'discharge' : 'hold');
+  c.className = 'cell ' + (KNOWN_ACTIONS.has(a) ? a : 'hold');
   timeline.appendChild(c);
 }});
 function socColor(pct) {{
@@ -370,7 +382,7 @@ function tick() {{
   const s = soc[idx] ?? 30;
   const pill = document.getElementById('action-pill');
   pill.textContent = ACTION_LABELS[act] || 'Hold';
-  pill.className = 'action-pill ' + act;
+  pill.className = 'action-pill ' + (KNOWN_ACTIONS.has(act) ? act : 'hold');
   document.getElementById('s-step').textContent = (idx + 1) + ' / 48';
   document.getElementById('s-time').textContent = times[idx] || '--:--';
   document.getElementById('s-soc').textContent = Math.round(s) + '%';
@@ -387,9 +399,9 @@ function tick() {{
   document.getElementById('solar').classList.toggle('glow', (pv[idx] || 0) > maxPv * 0.35);
   document.getElementById('home').classList.toggle('pulse', (load[idx] || 0) > 0.12 || act === 'discharge');
   setConn('conn-solar', act === 'charge' && (pv[idx] || 0) > 0.02, 'solar');
-  setConn('conn-batt', act === 'charge' || act === 'discharge', act === 'charge' ? 'charge' : act === 'discharge' ? 'discharge' : 'hold');
+  setConn('conn-batt', act === 'charge' || act === 'discharge' || act === 'grid_charge' || act === 'export', KNOWN_ACTIONS.has(act) ? act : 'hold');
   setConn('conn-home', act === 'discharge', 'discharge');
-  setConn('conn-grid', (gridImport[idx] || 0) > 0.01, 'discharge');
+  setConn('conn-grid', (gridImport[idx] || 0) > 0.01 || act === 'grid_charge' || act === 'export', act === 'grid_charge' ? 'grid_charge' : act === 'export' ? 'export' : 'discharge');
   timeline.querySelectorAll('.cell').forEach((el, i) => {{
     el.classList.toggle('active', i === idx);
     el.classList.toggle('past', i <= idx);
@@ -437,6 +449,8 @@ def _render_dispatch_html(
   .badge.charge { color: #4ade80; background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.35); }
   .badge.discharge { color: #fbbf24; background: rgba(245,156,26,0.14); border-color: rgba(245,156,26,0.4); }
   .badge.hold { color: #94a3b8; background: rgba(100,116,139,0.16); border-color: rgba(100,116,139,0.35); }
+  .badge.grid_charge { color: #38bdf8; background: rgba(14,165,233,0.12); border-color: rgba(14,165,233,0.35); }
+  .badge.export { color: #c084fc; background: rgba(168,85,247,0.12); border-color: rgba(168,85,247,0.35); }
   .step-line { font-size: 0.58rem; color: #64748b; }
   .flow { display: flex; align-items: center; justify-content: space-between; gap: 0.35rem; width: 100%; }
   .node { display: flex; flex-direction: column; align-items: center; gap: 0.2rem; flex-shrink: 0; }
@@ -484,6 +498,8 @@ def _render_dispatch_html(
   .cell.charge { background: #22c55e; }
   .cell.discharge { background: #f59e1a; }
   .cell.hold { background: #64748b; }
+  .cell.grid_charge { background: #0ea5e9; }
+  .cell.export { background: #a855f7; }
   .cell.active { height: 16px; outline: 1px solid #f8fafc; }
   .title {
     font-size: 0.68rem; letter-spacing: 0.1em; color: #f59e1a;
@@ -519,14 +535,18 @@ def _render_dispatch_html(
 {body}
 <script>
 const DATA = {data_json};
-const ACTION_LABELS = {{ hold: 'Hold', charge: 'Charge battery', discharge: 'Discharge battery' }};
+const ACTION_LABELS = {{
+  hold: 'Hold', charge: 'Charge battery', discharge: 'Discharge battery',
+  grid_charge: 'Grid-charge', export: 'Export'
+}};
+const KNOWN_ACTIONS = new Set(['hold', 'charge', 'discharge', 'grid_charge', 'export']);
 const actions = DATA.actions.length ? DATA.actions : Array(48).fill('hold');
 const times = DATA.times.length ? DATA.times : actions.map((_, i) => String(i).padStart(2,'0') + ':00');
 const soc = DATA.soc.length ? DATA.soc : Array(48).fill(30);
 const timeline = document.getElementById('timeline');
 actions.forEach((a) => {{
   const c = document.createElement('div');
-  c.className = 'cell ' + (a === 'charge' ? 'charge' : a === 'discharge' ? 'discharge' : 'hold');
+  c.className = 'cell ' + (KNOWN_ACTIONS.has(a) ? a : 'hold');
   timeline.appendChild(c);
 }});
 let idx = 0;
@@ -671,6 +691,8 @@ def render_topbar_dispatch(actions: list[str], times: list[str], soc: list[float
   .conn.charge .conn-pulse {{ background: #22c55e; box-shadow: 0 0 4px #22c55e; }}
   .conn.discharge .conn-pulse {{ background: #f59e1a; box-shadow: 0 0 4px #f59e1a; }}
   .conn.solar .conn-pulse {{ background: #fbbf24; box-shadow: 0 0 4px #fbbf24; }}
+  .conn.grid_charge .conn-pulse {{ background: #0ea5e9; box-shadow: 0 0 4px #0ea5e9; }}
+  .conn.export .conn-pulse {{ background: #a855f7; box-shadow: 0 0 4px #a855f7; }}
   @keyframes flow {{ 0% {{ left: -20%; }} 100% {{ left: 100%; }} }}
   /* Action badge — same icon row as other nodes */
   .action-segment {{ min-width: 68px; }}
@@ -682,6 +704,8 @@ def render_topbar_dispatch(actions: list[str], times: list[str], soc: list[float
   .badge.hold {{ color: #94a3b8; background: rgba(100,116,139,0.16); border-color: rgba(100,116,139,0.35); }}
   .badge.charge {{ color: #4ade80; background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.35); }}
   .badge.discharge {{ color: #fbbf24; background: rgba(245,156,26,0.14); border-color: rgba(245,156,26,0.4); }}
+  .badge.grid_charge {{ color: #38bdf8; background: rgba(14,165,233,0.12); border-color: rgba(14,165,233,0.35); }}
+  .badge.export {{ color: #c084fc; background: rgba(168,85,247,0.12); border-color: rgba(168,85,247,0.35); }}
   @media (max-width: 520px) {{
     .conn {{ width: 16px; }}
     .icon-box {{ min-width: 34px; }}
@@ -736,7 +760,8 @@ def render_topbar_dispatch(actions: list[str], times: list[str], soc: list[float
 </div>
 <script>
 const DATA = {data_json};
-const LABELS = {{ hold: 'Hold', charge: 'Charge', discharge: 'Discharge' }};
+const LABELS = {{ hold: 'Hold', charge: 'Charge', discharge: 'Discharge', grid_charge: 'Grid-charge', export: 'Export' }};
+const KNOWN_ACTIONS = new Set(['hold', 'charge', 'discharge', 'grid_charge', 'export']);
 const actions = DATA.actions.length ? DATA.actions : Array(48).fill('hold');
 const times = DATA.times.length ? DATA.times : [];
 const soc = DATA.soc.length ? DATA.soc : Array(48).fill(30);
@@ -769,8 +794,8 @@ function tick() {{
   document.getElementById('home').classList.toggle('active', act === 'discharge' || act === 'hold');
   setConn('c1', solarOn, 'solar');
   setConn('c2', act === 'charge', 'charge');
-  setConn('c3', act === 'charge' || act === 'discharge', act === 'charge' ? 'charge' : act === 'discharge' ? 'discharge' : 'hold');
-  setConn('c4', true, act === 'charge' ? 'charge' : act === 'discharge' ? 'discharge' : 'hold');
+  setConn('c3', act !== 'hold', KNOWN_ACTIONS.has(act) ? act : 'hold');
+  setConn('c4', true, KNOWN_ACTIONS.has(act) ? act : 'hold');
   idx = (idx + 1) % actions.length;
 }}
 tick();
