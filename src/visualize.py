@@ -14,7 +14,7 @@ from src.agents.q_table import QTable
 from src.config import load_config
 from src.constants import ACTION_NAMES, N_ACTIONS
 from src.discretizer import (
-    N_FEATURE_BINS,
+    N_PRICE_BINS,
     N_SOC_BINS,
     N_TIME_BINS,
     decode_state_index,
@@ -23,7 +23,7 @@ from src.discretizer import (
 # hold, charge, discharge, grid_charge, export
 ACTION_COLORS = ["#94a3b8", "#22c55e", "#f97316", "#0ea5e9", "#a855f7"]
 SOC_LABELS = ["low", "mid", "high"]
-PRICE_LABELS = ["cheap", "mid", "pricey"]
+PRICE_LABELS = ["cheapest", "cheap", "mid", "pricey", "priciest"]  # 5 quintile bins (CA2)
 TIME_LABELS = ["Night", "Morning", "Afternoon", "Evening"]
 
 
@@ -42,9 +42,9 @@ def plot_policy_panels(q: QTable, out_path: Path) -> None:
     fig, axes = plt.subplots(1, N_TIME_BINS, figsize=(4 * N_TIME_BINS, 3.6), sharey=True)
 
     for t in range(N_TIME_BINS):
-        grid = np.zeros((N_SOC_BINS, N_FEATURE_BINS), dtype=int)
+        grid = np.zeros((N_SOC_BINS, N_PRICE_BINS), dtype=int)
         for soc in range(N_SOC_BINS):
-            for price in range(N_FEATURE_BINS):
+            for price in range(N_PRICE_BINS):
                 mask = (decoded[:, 0] == soc) & (decoded[:, 3] == price) & (decoded[:, 4] == t)
                 acts = policy[mask]
                 grid[soc, price] = np.bincount(acts, minlength=N_ACTIONS).argmax() if len(acts) else 0
@@ -52,15 +52,15 @@ def plot_policy_panels(q: QTable, out_path: Path) -> None:
         ax = axes[t]
         ax.imshow(grid, cmap=cmap, vmin=0, vmax=N_ACTIONS - 1, aspect="auto", origin="lower")
         ax.set_title(TIME_LABELS[t])
-        ax.set_xticks(range(N_FEATURE_BINS), PRICE_LABELS)
+        ax.set_xticks(range(N_PRICE_BINS), PRICE_LABELS, rotation=30, ha="right")
         ax.set_yticks(range(N_SOC_BINS), SOC_LABELS)
         ax.set_xlabel("Price")
         if t == 0:
             ax.set_ylabel("Battery SOC")
         for soc in range(N_SOC_BINS):
-            for price in range(N_FEATURE_BINS):
+            for price in range(N_PRICE_BINS):
                 ax.text(price, soc, ACTION_NAMES[grid[soc, price]][:4],
-                        ha="center", va="center", fontsize=8, color="black")
+                        ha="center", va="center", fontsize=7, color="black")
 
     handles = [Patch(color=ACTION_COLORS[a], label=ACTION_NAMES[a]) for a in range(N_ACTIONS)]
     fig.suptitle("Greedy policy by SOC and price (majority over PV/load bins)", y=1.06)
