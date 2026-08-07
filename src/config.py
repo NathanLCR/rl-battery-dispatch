@@ -13,13 +13,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 @dataclass
 class RewardWeights:
-    """Reward weights applied to already-monetised cost terms (all subtracted)."""
+    """Reward weights applied to already-monetised cost terms."""
 
     w_grid_cost: float
     w_solar_waste: float
     w_battery_deg: float
     w_invalid_action: float
     w_export_revenue: float = 1.0
+    w_cycling: float = 1.0
 
 
 @dataclass
@@ -29,6 +30,8 @@ class Tariff:
     retail_margin_per_kwh: float
     feed_in_per_kwh: float
     battery_deg_cost_per_kwh: float
+    export_pricing: str = "wholesale"  # "wholesale" | "fixed"
+    terminal_soc_value_per_kwh: float = 0.15
 
 
 @dataclass
@@ -48,6 +51,9 @@ class Config:
     soc_high_pct: float
     min_soc_pct: float
     max_soc_pct: float
+    charge_efficiency: float
+    discharge_efficiency: float
+    cycling_cost_per_kwh: float
     n_bins: int
     n_time_periods: int
     alpha: float
@@ -60,6 +66,11 @@ class Config:
     alpha_decay: float
     alpha_min: float
     tariff: Tariff
+    forecast_horizon_steps: int
+    forecast_mode: str  # none | oracle | forecast
+    forecast_persistence_alpha: float
+    forecast_noise_scale: float
+    forecast_train_noise: bool
     reward_cost_only: RewardWeights
     reward_battery_aware: RewardWeights
     artifacts_dir: Path
@@ -81,6 +92,7 @@ def load_config(path: Path | None = None) -> Config:
             w_battery_deg=block["w_battery_deg"],
             w_invalid_action=block["w_invalid_action"],
             w_export_revenue=block.get("w_export_revenue", 1.0),
+            w_cycling=block.get("w_cycling", 1.0),
         )
 
     root = cfg_path.parent
@@ -90,6 +102,7 @@ def load_config(path: Path | None = None) -> Config:
     disc = raw["discretizer"]
     train = raw["training"]
     tar = raw["tariff"]
+    forecast = raw.get("forecast", {})
 
     return Config(
         repo_root=root,
@@ -105,6 +118,9 @@ def load_config(path: Path | None = None) -> Config:
         soc_high_pct=bat["soc_high_pct"],
         min_soc_pct=bat["min_soc_pct"],
         max_soc_pct=bat["max_soc_pct"],
+        charge_efficiency=float(bat.get("charge_efficiency", 0.95)),
+        discharge_efficiency=float(bat.get("discharge_efficiency", 0.95)),
+        cycling_cost_per_kwh=float(bat.get("cycling_cost_per_kwh", 0.02)),
         n_bins=disc["n_bins"],
         n_time_periods=disc["n_time_periods"],
         alpha=train["alpha"],
@@ -120,7 +136,14 @@ def load_config(path: Path | None = None) -> Config:
             retail_margin_per_kwh=tar["retail_margin_per_kwh"],
             feed_in_per_kwh=tar["feed_in_per_kwh"],
             battery_deg_cost_per_kwh=tar["battery_deg_cost_per_kwh"],
+            export_pricing=str(tar.get("export_pricing", "wholesale")),
+            terminal_soc_value_per_kwh=float(tar.get("terminal_soc_value_per_kwh", 0.15)),
         ),
+        forecast_horizon_steps=int(forecast.get("horizon_steps", 8)),
+        forecast_mode=str(forecast.get("mode", "forecast")),
+        forecast_persistence_alpha=float(forecast.get("persistence_alpha", 0.55)),
+        forecast_noise_scale=float(forecast.get("noise_scale", 1.0)),
+        forecast_train_noise=bool(forecast.get("train_noise", False)),
         reward_cost_only=rw(raw["reward"]["cost_only"]),
         reward_battery_aware=rw(raw["reward"]["battery_aware"]),
         artifacts_dir=root / paths["artifacts"],

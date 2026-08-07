@@ -31,6 +31,7 @@ from src.rule_baseline import greedy_self_consumption_action, price_arbitrage_ac
 from src.train import greedy_action_fn, load_trained_agent
 from dashboard.landing_animation import pick_demo_day
 from dashboard.landing_page import render_landing_body, render_landing_header
+from dashboard.play_vs_agent import render_play_vs_agent
 from dashboard.theme import (
     ACTION_COLORS,
     HOLD,
@@ -68,13 +69,18 @@ ACTION_DISPLAY = {
 }
 POLICY_MAIN_COLUMNS = {
     "grid_cost_aud": "Cost (AUD)",
+    "export_revenue_aud": "Export revenue",
     "grid_import_kwh": "Import (kWh)",
-    "self_consumption_rate": "Solar use (%)",
-    "self_sufficiency": "Self-suff. (%)",
+    "export_kwh": "Export (kWh)",
     "final_soc_pct": "Final SOC",
 }
 POLICY_DETAIL_COLUMNS = {
     "total_reward": "Reward",
+    "grid_charge_cost_aud": "Grid-charge cost",
+    "net_arbitrage_profit_aud": "Net arbitrage",
+    "battery_throughput_kwh": "Throughput (kWh)",
+    "n_grid_charge_actions": "Grid-charge acts",
+    "n_export_actions": "Export acts",
     "solar_waste_kwh": "Waste (kWh)",
     "evening_peak_import_kwh": "Evening import",
 }
@@ -431,6 +437,9 @@ def main() -> None:
         if st.session_state.view == "home":
             _hide_landing_sidebar()
             _render_landing()
+        elif st.session_state.view == "play":
+            _ensure_dashboard_sidebar()
+            _render_play()
         else:
             _ensure_dashboard_sidebar()
             _render_app()
@@ -438,7 +447,7 @@ def main() -> None:
         st.error(f"Dashboard failed to load: {exc}")
         st.info(
             "Run from the project folder:\n\n"
-            "`cd rl-battery-dispatch-review`\n\n"
+            "`cd rl-battery-dispatch`\n\n"
             "`python -m streamlit run dashboard/app.py`\n\n"
             "Or double-click **`run_dashboard.bat`** — then open **http://localhost:8501**"
         )
@@ -495,9 +504,35 @@ def _ensure_dashboard_sidebar() -> None:
     )
 
 
+def _render_play() -> None:
+    cfg, df, split, thresholds = load_resources()
+    all_models = list_models(cfg)
+    q_models = models_for_agent("q_learning", all_models)
+
+    with st.sidebar:
+        render_sidebar_header()
+        st.caption("Play vs Agent mode")
+        if st.button("Digital twin", use_container_width=True):
+            st.session_state.view = "twin"
+            st.rerun()
+        if st.button("Home", use_container_width=True):
+            st.session_state.view = "home"
+            st.rerun()
+        if render_sidebar_footer():
+            st.session_state.view = "home"
+            st.rerun()
+
+    render_play_vs_agent(cfg=cfg, df=df, split=split, thresholds=thresholds, q_models=q_models)
+
+
 def _render_landing() -> None:
     if render_landing_header():
         st.session_state.view = "twin"
+        st.rerun()
+
+    # Extra CTA for play mode
+    if st.button("Play vs Agent — human vs RL", type="secondary"):
+        st.session_state.view = "play"
         st.rerun()
 
     with st.spinner("Loading agent animation…"):
@@ -516,13 +551,15 @@ def _simulate_episode(
     show_rule: bool,
     show_arbitrage: bool,
     show_q: bool,
+    show_q_privileged: bool,
     show_sarsa: bool,
     show_dq: bool,
     q_model_name: str | None,
+    q_priv_model_name: str | None,
     sarsa_model_name: str | None,
     dq_model_name: str | None,
 ) -> tuple[pd.DataFrame | None, dict[str, object], dict[str, pd.DataFrame], list[dict], float, float, int]:
-    """Build policy traces for the selected simulation day (unchanged RL pipeline)."""
+    """Build policy traces for the selected simulation day."""
     step_count = len(df[df["episode_day"] == day])
     if step_count != 48:
         return None, {}, {}, [], 0.0, 0.0, step_count
@@ -535,34 +572,66 @@ def _simulate_episode(
     no_bat = no_battery_import_cost(episode_df, cfg)
     oracle = oracle_perfect_foresight_import(episode_df, cfg)
 
-    policies: dict[str, object] = {}
+    forecast_model = None
+    if show_q_privileged and cfg.forecast_mode == "forecast":
+        from src.price_forecast import PriceForecastModel, fit_price_forecast
+
+        fp = cfg.artifacts_dir / "price_forecast.json"
+        if fp.exists():
+            forecast_model = PriceForecastModel.load(fp)
+        else:
+            forecast_model = fit_price_forecast(
+                df,
+                horizon_steps=cfg.forecast_horizon_steps,
+                persistence_alpha=cfg.forecast_persistence_alpha,
+                noise_scale=cfg.forecast_noise_scale,
+            )
+
+    # (policy_name, action_fn, privileged, foresight_mode)
+    policies: dict[str, tuple[object, bool, str]] = {}
     if show_greedy:
-        policies["Greedy self-consumption baseline"] = greedy_policy_fn(thresholds, cfg)
+        policies["Greedy self-consumption baseline"] = (greedy_policy_fn(thresholds, cfg), False, "none")
     if show_rule:
-        policies["Rule-based baseline"] = rule_policy_fn(thresholds)
+        policies["Rule-based baseline"] = (rule_policy_fn(thresholds), False, "none")
     if show_arbitrage:
-        policies["Price-arbitrage rule (CA2)"] = arbitrage_rule_policy_fn()
+        policies["Greedy 5-action (current price)"] = (arbitrage_rule_policy_fn(), False, "none")
     if show_q and q_model_name:
         q_agent = load_rl_agent("q_learning", str(cfg.results_models / q_model_name), q_model_name)
-        policies["Q-Learning"] = greedy_action_fn(q_agent)
+        policies["Current-price Q-Learning"] = (greedy_action_fn(q_agent), False, "none")
+    if show_q_privileged and q_priv_model_name:
+        qp_agent = load_rl_agent(
+            "q_learning", str(cfg.results_models / q_priv_model_name), q_priv_model_name
+        )
+        fm = cfg.forecast_mode if cfg.forecast_mode in ("oracle", "forecast") else "forecast"
+        policies["Privileged Q-Learning (4h foresight)"] = (greedy_action_fn(qp_agent), True, fm)
     if show_sarsa and sarsa_model_name:
         s_agent = load_rl_agent("sarsa", str(cfg.results_models / sarsa_model_name), sarsa_model_name)
-        policies["SARSA"] = greedy_action_fn(s_agent)
+        policies["SARSA"] = (greedy_action_fn(s_agent), False, "none")
     if show_dq and dq_model_name:
         dq_agent = load_rl_agent("double_q_learning", str(cfg.results_models / dq_model_name), dq_model_name)
-        policies["Double Q-Learning"] = greedy_action_fn(dq_agent)
+        policies["Double Q-Learning"] = (greedy_action_fn(dq_agent), False, "none")
 
     traces: dict[str, pd.DataFrame] = {}
     summaries: list[dict] = []
     if policies:
-        for name, policy in policies.items():
-            trace, summary = trace_episode(episode_df, thresholds, policy, cfg, reward_mode)
+        for name, (policy, privileged, foresight) in policies.items():
+            trace, summary = trace_episode(
+                episode_df,
+                thresholds,
+                policy,
+                cfg,
+                reward_mode,
+                privileged=privileged,
+                foresight_mode=foresight,
+                forecast_model=forecast_model if foresight == "forecast" else None,
+            )
             trace["policy"] = name
             traces[name] = trace
             summary["policy"] = name
             summaries.append(summary)
 
-    return episode_df, policies, traces, summaries, no_bat, oracle, step_count
+    policy_fns = {name: fn for name, (fn, _, _) in policies.items()}
+    return episode_df, policy_fns, traces, summaries, no_bat, oracle, step_count
 
 
 @st.cache_data(ttl=30, show_spinner=False)
@@ -653,24 +722,55 @@ def _render_app() -> None:
             )
 
             st.subheader("Policies to compare")
-            show_greedy = st.checkbox("Greedy self-consumption baseline", value=True)
-            show_rule = st.checkbox("Rule-based baseline", value=False)
-            show_arbitrage = st.checkbox(
-                "Price-arbitrage rule (CA2)",
-                value=False,
-                help="Greedy self-consumption plus price-timed grid-charge/export using the extended 5-action space.",
+            if st.button("Open Play vs Agent", use_container_width=True):
+                st.session_state.view = "play"
+                st.rerun()
+            st.caption(
+                "Wholesale-exposed export tariff (experimental): "
+                "export revenue = kWh × wholesale AUD/kWh — not a household FiT."
             )
-            show_q = st.checkbox("Q-Learning", value=True)
+            show_arbitrage = st.checkbox(
+                "Greedy 5-action (current price)",
+                value=True,
+                help="Self-consumption first, then price-timed grid-charge/export.",
+            )
+            show_q = st.checkbox("Current-price Q-Learning", value=True)
+            show_q_privileged = st.checkbox(
+                "Privileged Q-Learning (4h foresight)",
+                value=True,
+                help="Same agent family with true four-hour future price-direction in the state.",
+            )
+            show_greedy = st.checkbox("Greedy self-consumption (solar-only)", value=False)
+            show_rule = st.checkbox("Rule-based baseline", value=False)
             show_sarsa = st.checkbox("SARSA", value=False)
             show_dq = st.checkbox("Double Q-Learning", value=False)
 
-            need_models = show_q or show_sarsa or show_dq
+            q_current_models = [p for p in q_models if "privileged" not in p.name.lower()]
+            q_priv_models = [p for p in q_models if "privileged" in p.name.lower()]
+            if not q_priv_models:
+                q_priv_models = q_models  # fall back so selector still works
+
+            need_models = show_q or show_q_privileged or show_sarsa or show_dq
             if need_models and not all_models:
                 st.error("No trained models in results/models/. Run training first.")
-                show_q = show_sarsa = show_dq = False
+                show_q = show_q_privileged = show_sarsa = show_dq = False
 
             q_model_name = (
-                _model_selectbox("Selected Q-Learning model", "Q-Learning", q_models, DEFAULT_Q) if show_q else None
+                _model_selectbox(
+                    "Current-price Q model", "Current-price Q-Learning", q_current_models, DEFAULT_Q
+                )
+                if show_q
+                else None
+            )
+            q_priv_model_name = (
+                _model_selectbox(
+                    "Privileged Q model",
+                    "Privileged Q-Learning",
+                    q_priv_models,
+                    q_priv_models[0].name if q_priv_models else "",
+                )
+                if show_q_privileged
+                else None
             )
             sarsa_model_name = (
                 _model_selectbox("Selected SARSA model", "SARSA", sarsa_models, DEFAULT_SARSA) if show_sarsa else None
@@ -681,12 +781,14 @@ def _render_app() -> None:
                 else None
             )
 
-            show_q_table = st.checkbox("Show learned Q-values for selected timestep", value=False)
+            show_q_table = st.checkbox("Show learned Q-values for selected timestep", value=True)
 
-            if show_q or show_sarsa or show_dq:
+            if show_q or show_q_privileged or show_sarsa or show_dq:
                 with st.expander("Technical details", expanded=False):
                     if show_q and q_model_name:
-                        st.caption(f"Q-Learning file: `{q_model_name}`")
+                        st.caption(f"Current-price Q file: `{q_model_name}`")
+                    if show_q_privileged and q_priv_model_name:
+                        st.caption(f"Privileged Q file: `{q_priv_model_name}`")
                     if show_sarsa and sarsa_model_name:
                         st.caption(f"SARSA file: `{sarsa_model_name}`")
                     if show_dq and dq_model_name:
@@ -706,9 +808,11 @@ def _render_app() -> None:
         show_rule=show_rule,
         show_arbitrage=show_arbitrage,
         show_q=show_q,
+        show_q_privileged=show_q_privileged,
         show_sarsa=show_sarsa,
         show_dq=show_dq,
         q_model_name=q_model_name,
+        q_priv_model_name=q_priv_model_name,
         sarsa_model_name=sarsa_model_name,
         dq_model_name=dq_model_name,
     )
@@ -732,7 +836,9 @@ def _render_app() -> None:
         (
             n
             for n in (
-                "Q-Learning",
+                "Privileged Q-Learning (4h foresight)",
+                "Current-price Q-Learning",
+                "Greedy 5-action (current price)",
                 "Greedy self-consumption baseline",
                 "SARSA",
                 "Double Q-Learning",
@@ -837,15 +943,32 @@ def _render_app() -> None:
         trace = traces[policy_pick]
         st.dataframe(format_trace(trace), width="stretch", height=420)
 
-        if show_q_table and show_q and q_model_name:
-            with st.expander("Q-value lookup (technical)", expanded=False):
+        if show_q_table and (
+            ("Current-price Q-Learning" in policy_pick and q_model_name)
+            or ("Privileged Q-Learning" in policy_pick and q_priv_model_name)
+        ):
+            with st.expander("Agent decision explanation (state · action · Q-values)", expanded=True):
                 step_idx = st.slider("Timestep for Q-value lookup", 1, 48, 24) - 1
-                state = int(trace.iloc[step_idx]["state"])
-                q_agent = load_rl_agent("q_learning", str(cfg.results_models / q_model_name), q_model_name)
+                row = trace.iloc[step_idx]
+                state = int(row["state"])
+                model_name = q_priv_model_name if "Privileged" in policy_pick else q_model_name
+                q_agent = load_rl_agent("q_learning", str(cfg.results_models / model_name), model_name)
                 q_vals = q_values_for_state(q_agent.q, state)
+                best_action = max(q_vals, key=q_vals.get)
                 st.markdown(
-                    f"Discretised state index **{state}** at timestep {step_idx + 1} "
-                    f"({trace.iloc[step_idx]['time_label']})"
+                    f"**Timestep {step_idx + 1}** ({row['time_label']}) · "
+                    f"state `{state}` · chosen **{_format_action(row['action'])}** · "
+                    f"SOC {row['soc_pct']:.1f}% · wholesale {row['price_per_kwh']:.4f} AUD/kWh · "
+                    f"export price {row.get('export_price_per_kwh', float('nan')):.4f} AUD/kWh"
+                )
+                if pd.notna(row.get("future_price_delta")):
+                    st.caption(
+                        f"Future price delta (max next 4h − now): {row['future_price_delta']:+.4f} AUD/kWh · "
+                        f"export revenue this step: {row.get('export_revenue_aud', 0):.4f} AUD"
+                    )
+                st.markdown(
+                    f"Greedy Q-argmax would pick **{ACTION_DISPLAY.get(best_action, best_action)}** "
+                    f"(Q={q_vals[best_action]:.4f})."
                 )
                 st.json(q_vals)
 

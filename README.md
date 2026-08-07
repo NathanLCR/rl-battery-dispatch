@@ -1,69 +1,98 @@
 # GréineQ
 
-Tabular reinforcement learning for residential battery dispatch on a solar-connected microgrid. The agent learns when to **hold**, **charge** from surplus solar, or **discharge** to offset load, using Ausgrid half-hourly household data and AEMO NSW1 wholesale prices (Customer 1; 48 steps per day).
-
-## CA2 extension: grid-charge / export price arbitrage
-
-CA1 scoped the action space to solar-only dispatch and named grid-charging as
-future work ("price is observed but barely actionable... Grid charging is the
-CA2 extension that makes price fully matter"). CA2 adds two actions:
-
-- **`grid_charge`** — import from the grid purely to charge the battery (buy low).
-- **`export`** — discharge to sell back to the grid beyond covering load (sell high).
-
-State space is unchanged (still 324 states); only the action space grows 3→5.
-This is a materially different MDP, not a redeployment of CA1: it roughly
-**doubles the theoretical savings ceiling** (oracle cost drops from 49.19 AUD →
-29.62 AUD over the 53-day test split), but under the current coarse
-price/time discretisation, neither a reactive price-threshold heuristic nor
-tabular Q-Learning/SARSA can safely capture that extra value — both
-*underperform* the original solar-only greedy baseline. See
-`results/logs/comparison_ca2_arbitrage.csv` for the full comparison table.
-This is deliberately reported as a finding, not hidden: it's a concrete,
-reproducible illustration of the gap between a theoretical ceiling and what a
-deployed policy with realistic state information can actually achieve.
-
-A price-arbitrage rule baseline (`src/rule_baseline.py::price_arbitrage_rule_action`)
-and an extended perfect-foresight oracle (`src/oracle.py`, `actions=ALL_ACTIONS`
-by default) are included for comparison. Pass `actions=(HOLD, CHARGE, DISCHARGE)`
-to `oracle_perfect_foresight_import` to reproduce the original CA1 solar-only bound.
-
-### Live grid signal (real-time extension)
-
-`src/live_feed.py` pulls AEMO's public NEM dashboard API for the **current**
-NSW1 wholesale price and shows what the trained agent would do right now,
-alongside the historical replay. Household solar/load are not available live,
-so live mode combines the real live price with a representative
-(median-by-time-of-day) solar/load profile — surfaced explicitly in the UI
-rather than hidden, since that mixed-reality gap is itself part of the CA2
-theory-vs-deployed story. Enable it in the dashboard sidebar under "🔴 Live
-grid signal (real AEMO NSW1 feed)".
+Tabular reinforcement learning for residential battery dispatch on a solar-connected microgrid. Agents learn when to **hold**, **charge** from surplus solar, **discharge** to offset load, **grid-charge**, or **export**, using Ausgrid half-hourly household data and AEMO NSW1 wholesale prices (Customer 1; 48 steps per day).
 
 ## Live dashboard
 
-**Published instance:** [https://greineq-agent.sudocod.com/](https://greineq-agent.sudocod.com/)
-
-The landing page replays a full 48-step day with the Q-Agent control core, solar generation, battery SOC, and dispatch timeline. The interactive digital twin compares greedy self-consumption, rule-based, and trained RL policies on any train, validation, or test day.
+**Published instance:** [https://greineq-agent.sudocod.com/](https://greineq-agent.sudocod.com/)  
+*(production may lag the `ca2_agent` branch — run locally for the latest forecast / Play-vs-Agent features.)*
 
 | View | Description |
 |------|-------------|
-| Landing / control core | Animated day replay, KPI strip, and dispatch timeline |
-| Interactive digital twin | Policy comparison charts, sidebar filters, Q-table inspection |
+| Landing / control core | Animated day replay, KPI strip, dispatch timeline |
+| Interactive digital twin | Policy comparison, Q-value inspection |
+| **Play vs Agent** | Human operates one battery; RL + greedy run identical twins |
 
-![GréineQ landing page — control core and simulation replay](docs/screenshots/landing-control-core.png)
+```powershell
+.\run_dashboard.ps1
+# or: streamlit run dashboard/app.py
+```
 
-![GréineQ digital twin — policy comparison dashboard](docs/screenshots/digital-twin-dashboard.png)
+## CA2 contribution: forecast-information experiment
 
-## Overview
+The main CA2 question: **does forward-looking price information help a tabular agent time grid arbitrage?**
 
-GréineQ provides a reproducible pipeline from raw metering data to trained dispatch policies:
+### Controllers compared
 
-- Custom MDP environment (`MicrogridEnv`) with deterministic battery physics
-- Discretised observations (324 states, 3 actions) for tabular Q-Learning, SARSA, and Double Q-Learning
-- Monetised reward aligned with household grid-import cost in AUD
-- Baselines spanning a no-battery floor, perfect-foresight oracle, greedy self-consumption, and a tertile rule
-- Evaluation utilities for multi-seed runs, cross-customer transfer, reward ablation, and tariff sensitivity
-- Streamlit dashboard for interactive day replay and policy comparison
+| Controller | Information | Actions |
+|------------|-------------|---------|
+| Greedy 5-action | Current state + price | All five |
+| Current-info RL | Current state + price | All five |
+| Privileged RL | Current + 4h price direction | All five |
+| Perfect-foresight oracle | Full future prices | Benchmark only |
+
+Primary algorithm: **Q-Learning**. SARSA and Double Q-Learning are supported in the same pipeline.
+
+### Modelling (wholesale-exposed tariff)
+
+This experiment uses an **experimental wholesale-exposed export price** — not a normal Australian household FiT:
+
+```text
+export revenue = exported_kWh × wholesale AUD/kWh
+wholesale AUD/kWh = AEMO AUD/MWh ÷ 1000   # already stored as price_per_kwh
+```
+
+Also included: charge/discharge efficiency (0.95), cycling cost, SOC limits, no simultaneous charge+export, and terminal SOC valuation so agents cannot “win” by emptying the battery.
+
+### Privileged foresight signal
+
+```text
+future_signal = max(price over next 8 half-hours) − current price
+→ FALL_OR_FLAT | MODERATE_RISE | STRONG_RISE   (train-only tertiles)
+```
+
+Two modes (`config.yaml` → `forecast.mode`):
+
+| Mode | Meaning |
+|------|---------|
+| `oracle` | True future prices (information upper bound) |
+| `forecast` | **Realistic** climatology + persistence forecast (default, deployable-style) |
+
+State sizes: current-info **540** · privileged **1620** (540 × 3 foresight bins).
+
+### Run the experiment
+
+```bash
+# Q-Learning, realistic forecasts, 5 seeds (full)
+python -m src.forecast_info_experiment --foresight forecast --agents q_learning \
+  --episodes 10000 --seeds 42 43 44 45 46 --tag forecast_exp
+
+# Also test SARSA and Double Q-Learning (same fair setup)
+python -m src.forecast_info_experiment --foresight forecast \
+  --agents q_learning sarsa double_q_learning \
+  --episodes 10000 --seeds 42 43 44 45 46 --tag multi_agent
+
+# Smoke test
+python -m src.forecast_info_experiment --quick --foresight forecast --tag smoke
+
+# Oracle foresight (true future) instead of realistic forecast
+python -m src.forecast_info_experiment --foresight oracle --agents q_learning --tag oracle_priv
+```
+
+Outputs: `results/logs/forecast_exp_*.csv`, plots under `results/plots/`, models under `results/models/`.  
+Write-up: `deliverables/notebooklm/CA2_Forecast_Info_Experiment_Findings.md`.
+
+**Fairness rule:** retrain and evaluate everything under the wholesale tariff. Do not mix with older fixed-FiT numbers.
+
+### Headline finding (oracle-direction privileged Q, 10k ep × 5 seeds)
+
+Under wholesale export + efficiencies + terminal SOC, **greedy 5-action still wins**; privileged *direction* alone did not beat current-info Q. See findings doc for tables and interpretation branches.
+
+## Earlier CA2 work (grid-charge / export MDP)
+
+CA1 was solar-only (3 actions). CA2 first extended the MDP to 5 actions and showed that allowing arbitrage lowers the *oracle* ceiling, but reactive heuristics and tabular RL under coarse current-price discretisation underperformed greedy self-consumption. See `deliverables/notebooklm/CA2_Arbitrage_Extension_Findings.md`.
+
+Live AEMO NSW1 feed (`src/live_feed.py`) shows the current wholesale price vs the agent’s action (PV/load are historical medians — disclosed in the UI).
 
 ## Requirements
 
@@ -73,7 +102,7 @@ GréineQ provides a reproducible pipeline from raw metering data to trained disp
 pip install -r requirements.txt
 ```
 
-Run all commands from the repository root.
+Run all commands from the repository root (`rl-battery-dispatch/`).
 
 ## Data
 
@@ -82,175 +111,91 @@ Run all commands from the repository root.
 | Ausgrid Solar Home Data | `Ausgrid_solar_home_data/` | Half-hourly PV and household load |
 | AEMO NSW1 prices | `aemo/` | Regional reference price (RRP) |
 | Merged dataset | `data/merged_30min_v2.csv` | Aligned 30-min rows (customers 1–5) |
-| Day split | `data/day_split.json` | Month-stratified train / validation / test partition |
+| Day split | `data/day_split.json` | Chronological train / validation / test |
 
-Notebooks for dataset construction:
-
-- `build_dataset.ipynb` — merge Ausgrid and AEMO
-- `data_split.ipynb` — generate `day_split.json`
+Notebooks: `build_dataset.ipynb`, `data_split.ipynb`.
 
 ## Repository layout
 
 ```
-├── config.yaml              # Battery, tariff, training, and reward settings
+├── config.yaml                 # Battery, tariff, forecast, training, reward
 ├── requirements.txt
 ├── src/
-│   ├── environment.py       # Microgrid MDP
-│   ├── physics.py           # Shared battery step dynamics
-│   ├── discretizer.py       # State binning (324 states)
-│   ├── oracle.py            # No-battery floor and perfect-foresight oracle
-│   ├── rule_baseline.py     # Tertile rule and greedy self-consumption
-│   ├── train.py             # Training entry point
-│   ├── evaluate.py          # Policy evaluation and KPI aggregation
-│   ├── compare.py           # Test-split comparison table
-│   ├── run_seeds.py         # Multi-seed training and significance tests
-│   ├── cross_customer.py    # Cross-household generalisation
-│   ├── ablation_reward.py   # cost_only vs battery_aware ablation
-│   ├── tariff_sensitivity.py
-│   ├── visualize.py         # Policy map and Q-table plots
-│   ├── replay.py            # Step-by-step trace for the dashboard
-│   └── agents/
-│       ├── q_learning.py
-│       ├── sarsa.py
-│       └── double_q_learning.py
+│   ├── environment.py          # Microgrid MDP (5 actions, wholesale export)
+│   ├── physics.py              # Efficiencies, cycling, SOC limits
+│   ├── discretizer.py          # 540 / 1620 state encoding + foresight bins
+│   ├── price_forecast.py       # Realistic climatology+persistence forecasts
+│   ├── forecast_info_experiment.py  # Main CA2 experiment runner
+│   ├── oracle.py               # Perfect-foresight DP bound
+│   ├── rule_baseline.py        # Greedy 5-action + tertile / solar-only rules
+│   ├── train.py                # --agent / --privileged training
+│   ├── evaluate.py / replay.py / compare.py / visualize.py
+│   ├── live_feed.py            # Live AEMO NSW1 price
+│   └── agents/                 # Q-Learning, SARSA, Double Q-Learning
 ├── dashboard/
-│   ├── app.py               # Streamlit landing page and digital twin
-│   ├── dispatch_widget.py   # Q-Agent energy-flow animation widgets
-│   ├── landing_page.py      # Landing layout and hero
-│   ├── theme.py             # Shared CSS and header components
-│   └── landing_animation.py # Demo GIF builder
-├── Dockerfile/              # Docker Compose + nginx deploy (see Dockerfile/README.md)
-├── docs/screenshots/        # README dashboard screenshots
-├── run_dashboard.ps1        # Windows launch script
-├── data/
-├── aemo/
-└── Ausgrid_solar_home_data/
+│   ├── app.py                  # Landing, digital twin, Play vs Agent
+│   ├── play_vs_agent.py        # Human vs RL game
+│   └── ...
+├── deliverables/notebooklm/    # Findings + defence notes
+├── Dockerfile/                 # Compose + nginx deploy
+└── data/
 ```
 
-Training outputs are written to `results/` (logs, models, plots) and `artifacts/` (discretiser thresholds). Both directories are gitignored; regenerate them by running the scripts below.
-
-## Quick start
-
-### Train
+## Quick start (single-agent train)
 
 ```bash
-python -m src.train --agent q_learning --episodes 10000 --tag main
-python -m src.train --agent sarsa --episodes 10000 --tag main
-python -m src.train --agent double_q_learning --episodes 10000 --tag main
+python -m src.train --agent q_learning --episodes 10000 --tag current
+python -m src.train --agent q_learning --episodes 10000 --privileged --tag privileged
+python -m src.train --agent sarsa --episodes 10000 --tag current
+python -m src.train --agent double_q_learning --episodes 10000 --tag current
 ```
 
-Options: `--reward-mode` (`battery_aware` | `cost_only`), `--gamma`, `--epsilon`, `--epsilon-decay`, `--seed`, `--tag`.
+Options: `--reward-mode`, `--gamma`, `--epsilon`, `--epsilon-decay`, `--seed`, `--q-init`, `--privileged`, `--tag`.
 
-Each run produces:
+## Play vs Agent
 
-- `results/models/Q_<agent>_<timestamp>_<tag>.npy`
-- `results/logs/train_*.csv`, `eval_*.csv`, `test_*.csv`
-- `results/plots/learning_curve_*.png`, `eval_curve_*.png`
-- `artifacts/bin_thresholds.json`
+1. Train at least one Q-Learning model (current and/or privileged).
+2. Open the dashboard → **Play vs Agent**.
+3. Pick a test day and opponent model.
+4. Each step, choose hold / solar charge / discharge / grid-charge / export.
+5. You see a **realistic 4-hour price forecast**; the agent uses its trained policy on an identical battery.
+6. At day end, compare cost, export revenue, grid-charge cost, net arbitrage, imports/exports, final SOC, reward, and action counts. Inspect Q-values per timestep.
 
-Double Q-Learning stores two Q-tables in one file (shape `2 × states × actions`).
+## Configuration (`config.yaml`)
 
-### Compare policies
-
-```bash
-python -m src.compare \
-  --q-model results/models/Q_q_learning_<timestamp>_main.npy \
-  --sarsa-model results/models/Q_sarsa_<timestamp>_main.npy \
-  --output results/logs/comparison_main.csv
-```
-
-| Policy | Role |
-|--------|------|
-| `no_battery` | Cost without storage (upper bound) |
-| `oracle_perfect_foresight` | Minimum import cost with perfect foresight (DP lower bound) |
-| `greedy_self_consumption` | Charge surplus, discharge deficit (primary heuristic baseline) |
-| `rule_tertile` | Charge on top-PV tertile, discharge on top-load tertile |
-| RL agents | Greedy policy from a trained Q-table |
-
-The comparison CSV includes `total_grid_cost_aud`, `cost_saving_vs_greedy_pct`, `pct_of_oracle_savings`, self-consumption rate, self-sufficiency, and evening-peak import.
-
-### Additional experiments
-
-```bash
-# Multi-seed robustness (optional --quick for 3000 episodes)
-python -m src.run_seeds --agents q_learning sarsa --seeds 42 43 44 45 46
-
-# Train on Customer 1, evaluate on 2–5
-python -m src.cross_customer --train-customer 1 --test-customers 2 3 4 5
-
-# Reward ablation
-python -m src.ablation_reward --agent q_learning
-
-# Retail margin sensitivity
-python -m src.tariff_sensitivity --margins 0.15 0.22 0.35 --episodes 10000
-
-# Policy visualisation
-python -m src.visualize --model results/models/Q_q_learning_<timestamp>_main.npy --tag main
-```
-
-### Dashboard
-
-```powershell
-.\run_dashboard.ps1
-```
-
-```bash
-streamlit run dashboard/app.py
-```
-
-Open [http://localhost:8501](http://localhost:8501). The overview page shows an animated day replay; the digital-twin view compares greedy self-consumption, the tertile rule, and trained RL policies on any train, validation, or test day.
-
-### Docker deployment (production)
-
-See [Dockerfile/README.md](Dockerfile/README.md) for the full guide. From the repository root:
-
-```bash
-docker compose -f Dockerfile/docker-compose.yml up -d --build
-```
-
-With nginx reverse proxy:
-
-```bash
-docker compose -f Dockerfile/docker-compose.yml --profile with-nginx up -d --build
-```
-
-The published dashboard at [https://greineq-agent.sudocod.com/](https://greineq-agent.sudocod.com/) runs from this container setup.
-
-## Configuration
-
-`config.yaml` controls:
-
-| Section | Parameters |
-|---------|------------|
-| Battery | Capacity, power limits, SOC guard bands |
-| Tariff | Retail margin, feed-in rate, degradation cost (AUD/kWh) |
-| Reward | `cost_only` and `battery_aware` weight profiles |
-| Training | Learning rate, discount factor, exploration schedule, episodes, seed, alpha decay |
-| Data | Primary customer ID, steps per episode |
+| Section | Key settings |
+|---------|----------------|
+| `battery` | Capacity, power, SOC bands, **efficiencies**, **cycling cost** |
+| `tariff` | Retail margin, FiT (legacy), `export_pricing: wholesale\|fixed`, terminal SOC value |
+| `forecast` | `mode`, horizon (8 steps), persistence α, noise |
+| `reward` | Weights including export revenue and cycling |
+| `training` | α, γ, ε schedule, episodes, seed |
 
 ## Metrics
 
 | Metric | Description |
 |--------|-------------|
-| `total_grid_cost_aud` | Sum of retail import bills over the evaluation split |
-| `cost_saving_vs_greedy_pct` | Saving relative to greedy self-consumption |
-| `pct_of_oracle_savings` | Share of the no-battery → oracle cost gap captured |
-| `mean_self_consumption_rate` | On-site use of PV generation |
-| `mean_self_sufficiency` | Load met without grid import |
-| `mean_evening_peak_import_kwh` | Grid import after 17:00 local time |
+| `total_grid_cost_aud` | Net household cost (imports − export revenue + cycling + terminal SOC) |
+| `export_revenue_aud` | Export income under the configured tariff |
+| `grid_charge_cost_aud` | Cost of deliberate grid charging |
+| `net_arbitrage_profit_aud` | Export revenue − grid-charge cost |
+| `pct_of_oracle_savings` | Share of no-battery → oracle gap captured |
+| Day win rate | % of test days with lowest cost vs other controllers |
 
-## Design scope
+## Design notes
 
-The current simulator models **solar-only dispatch**: the battery charges from surplus PV and discharges to offset the step load deficit. Grid import for charging and export to the grid are not implemented; wholesale price is observed but actionable arbitrage is limited to timing self-consumption.
+- **Export honesty:** wholesale-exposed export is labelled experimental. Round-trip grid-charge→export loses the retail margin (~0.22 AUD/kWh) plus efficiency/cycling, so profitable foresight is mostly “buy cheap → serve load later,” not “sell high.”
+- State uses coarse time-of-day bins (not step index) for a compact tabular Q-table.
+- Chronological train/val/test splits; foresight thresholds fitted on **train only**.
 
-State encoding uses four coarse time-of-day bins instead of the step index, trading strict Markov sufficiency for a compact 324-state Q-table. Greedy self-consumption is the primary reference baseline; the tertile rule is retained as a weaker heuristic for comparison.
+## Docker
 
-## Roadmap
+See [Dockerfile/README.md](Dockerfile/README.md).
 
-- Grid-charging and export actions for price arbitrage under two-part tariffs
-- Finer SOC bins and daytime-only PV binning to reduce state aliasing
-- Stochastic extensions (forecast uncertainty, multi-day SOC carry-over)
-- Additional hosted households and tariff profiles on the live dashboard
+```bash
+docker compose -f Dockerfile/docker-compose.yml up -d --build
+docker compose -f Dockerfile/docker-compose.yml --profile with-nginx up -d --build
+```
 
 ## License
 
