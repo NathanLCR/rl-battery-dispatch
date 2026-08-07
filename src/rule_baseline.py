@@ -62,10 +62,9 @@ def price_arbitrage_rule_action(
     max_soc_pct: float = 90.0,
 ) -> int:
     """
-    CA2 heuristic: greedy self-consumption first, then price-timed arbitrage with
-    whatever headroom is left. Charge from grid on cheap-tertile price if there's
-    no solar surplus and room in the battery; export on expensive-tertile price if
-    there's no load deficit and SOC is comfortably above the floor.
+    Greedy 5-action baseline (current price only): self-consumption first, then
+    price-timed grid-charge / export. Under wholesale-exposed export pricing,
+    exporting in the top price quintile is economically meaningful.
     """
     surplus = max(0.0, pv_kwh - load_kwh)
     deficit = max(0.0, load_kwh - pv_kwh)
@@ -75,11 +74,15 @@ def price_arbitrage_rule_action(
         return CHARGE
     if deficit > 0 and soc_pct > min_soc_pct:
         return DISCHARGE
-    if p_bin == 0 and soc_pct < max_soc_pct:  # cheapest quintile
+    if p_bin == 0 and soc_pct < max_soc_pct:  # cheapest quintile → buy
         return GRID_CHARGE
-    if p_bin == N_PRICE_BINS - 1 and soc_pct > min_soc_pct + 20.0:  # priciest quintile, keep a buffer
+    if p_bin == N_PRICE_BINS - 1 and soc_pct > min_soc_pct + 20.0:  # priciest → sell
         return EXPORT
     return HOLD
+
+
+# Alias used by the forecast-information experiment comparison table.
+greedy_five_action = price_arbitrage_rule_action
 
 
 def price_arbitrage_action_fn(env):

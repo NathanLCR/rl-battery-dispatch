@@ -23,6 +23,8 @@ class DoubleQLearningAgent:
         alpha_min: float = 0.01,
         seed: int = 42,
         q_init: float = 0.0,
+        n_states: int | None = None,
+        n_actions: int | None = None,
     ) -> None:
         self.alpha = alpha
         self.gamma = gamma
@@ -32,13 +34,17 @@ class DoubleQLearningAgent:
         self.alpha_decay = alpha_decay
         self.alpha_min = alpha_min
         self.rng = np.random.default_rng(seed)
-        self.q_a = QTable(init_value=q_init)
-        self.q_b = QTable(init_value=q_init)
+        from src.discretizer import N_ACTIONS, N_STATES
+
+        ns = N_STATES if n_states is None else n_states
+        na = N_ACTIONS if n_actions is None else n_actions
+        self.q_a = QTable(n_states=ns, n_actions=na, init_value=q_init)
+        self.q_b = QTable(n_states=ns, n_actions=na, init_value=q_init)
 
     @property
     def q(self) -> QTable:
         """Combined Q_A + Q_B for evaluation and export (allocates a new table)."""
-        combined = QTable()
+        combined = QTable(n_states=self.q_a.n_states, n_actions=self.q_a.n_actions)
         combined.table = self.q_a.table + self.q_b.table
         return combined
 
