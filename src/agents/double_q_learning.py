@@ -22,6 +22,7 @@ class DoubleQLearningAgent:
         alpha_decay: float = 1.0,
         alpha_min: float = 0.01,
         seed: int = 42,
+        q_init: float = 0.0,
     ) -> None:
         self.alpha = alpha
         self.gamma = gamma
@@ -31,8 +32,8 @@ class DoubleQLearningAgent:
         self.alpha_decay = alpha_decay
         self.alpha_min = alpha_min
         self.rng = np.random.default_rng(seed)
-        self.q_a = QTable()
-        self.q_b = QTable()
+        self.q_a = QTable(init_value=q_init)
+        self.q_b = QTable(init_value=q_init)
 
     @property
     def q(self) -> QTable:

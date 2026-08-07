@@ -156,8 +156,6 @@ LANDING_CSS = """
     .gq-badge-charge    { background: rgba(34,197,94,0.12);  color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
     .gq-badge-discharge { background: rgba(245,156,26,0.12); color: #fbbf24; border: 1px solid rgba(245,156,26,0.35); }
     .gq-badge-hold      { background: rgba(100,116,139,0.14);color: #94a3b8; border: 1px solid rgba(100,116,139,0.3); }
-    .gq-badge-grid_charge { background: rgba(14,165,233,0.12); color: #38bdf8; border: 1px solid rgba(14,165,233,0.35); }
-    .gq-badge-export    { background: rgba(168,85,247,0.12); color: #c084fc; border: 1px solid rgba(168,85,247,0.35); }
     .gq-badge-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 
     .st-key-gq_hero iframe {
@@ -211,15 +209,12 @@ def render_landing_body(trace, demo_day: str = "") -> None:
 <h3>Simulation replay</h3>
 <p>GréineQ replays a historical solar microgrid day. At each 30-minute timestep, the Q-Agent
 observes solar generation, household demand, battery state of charge, and grid price, then
-selects a battery action: hold, charge from solar, discharge to load, grid-charge, or export —
-the last two enable CA2's price-arbitrage extension on top of the CA1 solar-only dispatch.</p>
+selects a battery action: hold, charge, or discharge.</p>
 </div>
 <div class="gq-action-strip">
 <span class="gq-action-badge gq-badge-hold"><span class="gq-badge-dot" style="background:#64748b"></span>Hold — dispatch action</span>
 <span class="gq-action-badge gq-badge-charge"><span class="gq-badge-dot" style="background:#22c55e"></span>Charge battery</span>
 <span class="gq-action-badge gq-badge-discharge"><span class="gq-badge-dot" style="background:#f59e1a"></span>Discharge battery</span>
-<span class="gq-action-badge gq-badge-grid_charge"><span class="gq-badge-dot" style="background:#0ea5e9"></span>Grid-charge (arbitrage)</span>
-<span class="gq-action-badge gq-badge-export"><span class="gq-badge-dot" style="background:#a855f7"></span>Export (arbitrage)</span>
 </div>""",
         unsafe_allow_html=True,
     )

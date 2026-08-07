@@ -2,6 +2,43 @@
 
 Tabular reinforcement learning for residential battery dispatch on a solar-connected microgrid. The agent learns when to **hold**, **charge** from surplus solar, or **discharge** to offset load, using Ausgrid half-hourly household data and AEMO NSW1 wholesale prices (Customer 1; 48 steps per day).
 
+## CA2 extension: grid-charge / export price arbitrage
+
+CA1 scoped the action space to solar-only dispatch and named grid-charging as
+future work ("price is observed but barely actionable... Grid charging is the
+CA2 extension that makes price fully matter"). CA2 adds two actions:
+
+- **`grid_charge`** — import from the grid purely to charge the battery (buy low).
+- **`export`** — discharge to sell back to the grid beyond covering load (sell high).
+
+State space is unchanged (still 324 states); only the action space grows 3→5.
+This is a materially different MDP, not a redeployment of CA1: it roughly
+**doubles the theoretical savings ceiling** (oracle cost drops from 49.19 AUD →
+29.62 AUD over the 53-day test split), but under the current coarse
+price/time discretisation, neither a reactive price-threshold heuristic nor
+tabular Q-Learning/SARSA can safely capture that extra value — both
+*underperform* the original solar-only greedy baseline. See
+`results/logs/comparison_ca2_arbitrage.csv` for the full comparison table.
+This is deliberately reported as a finding, not hidden: it's a concrete,
+reproducible illustration of the gap between a theoretical ceiling and what a
+deployed policy with realistic state information can actually achieve.
+
+A price-arbitrage rule baseline (`src/rule_baseline.py::price_arbitrage_rule_action`)
+and an extended perfect-foresight oracle (`src/oracle.py`, `actions=ALL_ACTIONS`
+by default) are included for comparison. Pass `actions=(HOLD, CHARGE, DISCHARGE)`
+to `oracle_perfect_foresight_import` to reproduce the original CA1 solar-only bound.
+
+### Live grid signal (real-time extension)
+
+`src/live_feed.py` pulls AEMO's public NEM dashboard API for the **current**
+NSW1 wholesale price and shows what the trained agent would do right now,
+alongside the historical replay. Household solar/load are not available live,
+so live mode combines the real live price with a representative
+(median-by-time-of-day) solar/load profile — surfaced explicitly in the UI
+rather than hidden, since that mixed-reality gap is itself part of the CA2
+theory-vs-deployed story. Enable it in the dashboard sidebar under "🔴 Live
+grid signal (real AEMO NSW1 feed)".
+
 ## Live dashboard
 
 **Published instance:** [https://greineq-agent.sudocod.com/](https://greineq-agent.sudocod.com/)
