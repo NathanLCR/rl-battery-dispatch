@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from src.constants import CHARGE, DISCHARGE, EXPORT, GRID_CHARGE, HOLD
-from src.discretizer import BinThresholds, _feature_bin, soc_bin
+from src.discretizer import N_PRICE_BINS, BinThresholds, _feature_bin, price_bin, soc_bin
 
 
 def rule_tertile_action(
@@ -69,15 +69,15 @@ def price_arbitrage_rule_action(
     """
     surplus = max(0.0, pv_kwh - load_kwh)
     deficit = max(0.0, load_kwh - pv_kwh)
-    price_bin = _feature_bin(price_per_kwh, thresholds.price_q33, thresholds.price_q66)
+    p_bin = price_bin(price_per_kwh, thresholds)  # 0=cheapest quintile ... 4=priciest
 
     if surplus > 0 and soc_pct < max_soc_pct:
         return CHARGE
     if deficit > 0 and soc_pct > min_soc_pct:
         return DISCHARGE
-    if price_bin == 0 and soc_pct < max_soc_pct:  # cheap
+    if p_bin == 0 and soc_pct < max_soc_pct:  # cheapest quintile
         return GRID_CHARGE
-    if price_bin == 2 and soc_pct > min_soc_pct + 20.0:  # pricey, keep a buffer
+    if p_bin == N_PRICE_BINS - 1 and soc_pct > min_soc_pct + 20.0:  # priciest quintile, keep a buffer
         return EXPORT
     return HOLD
 

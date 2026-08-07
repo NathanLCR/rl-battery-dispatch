@@ -227,7 +227,7 @@ def save_eval_log(eval_logs: list[dict], path: Path) -> None:
         writer.writerows(eval_logs)
 
 
-def make_agent(name: str, cfg: Config, seed: int | None = None):
+def make_agent(name: str, cfg: Config, seed: int | None = None, q_init: float = 0.0):
     """Factory for supported tabular agents using training hyperparameters from config."""
     agent_seed = cfg.random_seed if seed is None else seed
     common = dict(
@@ -239,6 +239,7 @@ def make_agent(name: str, cfg: Config, seed: int | None = None):
         alpha_decay=cfg.alpha_decay,
         alpha_min=cfg.alpha_min,
         seed=agent_seed,
+        q_init=q_init,
     )
     if name == "q_learning":
         return QLearningAgent(**common)
@@ -286,6 +287,10 @@ def main() -> None:
     parser.add_argument("--epsilon", type=float, default=None)
     parser.add_argument("--epsilon-decay", type=float, default=None)
     parser.add_argument("--tag", type=str, default="", help="Suffix on output filenames")
+    parser.add_argument(
+        "--q-init", type=float, default=0.0,
+        help="Optimistic Q-table initial value (encourages exploring under-tried actions, e.g. grid_charge/export)",
+    )
     args = parser.parse_args()
 
     cfg = load_config()
@@ -305,7 +310,7 @@ def main() -> None:
     thresholds = fit_discretizer(df, cfg)
     thresholds.save(cfg.artifacts_dir / "bin_thresholds.json")
 
-    agent = make_agent(args.agent, cfg, seed=cfg.random_seed)
+    agent = make_agent(args.agent, cfg, seed=cfg.random_seed, q_init=args.q_init)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     tag = f"_{args.tag}" if args.tag else ""
 

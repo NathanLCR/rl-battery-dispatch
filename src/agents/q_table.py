@@ -12,10 +12,10 @@ from src.discretizer import N_ACTIONS, N_STATES
 class QTable:
     """Fixed-size Q(s, a) table with epsilon-greedy exploration and TD updates."""
 
-    def __init__(self, n_states: int = N_STATES, n_actions: int = N_ACTIONS) -> None:
+    def __init__(self, n_states: int = N_STATES, n_actions: int = N_ACTIONS, init_value: float = 0.0) -> None:
         self.n_states = n_states
         self.n_actions = n_actions
-        self.table = np.zeros((n_states, n_actions), dtype=np.float64)
+        self.table = np.full((n_states, n_actions), init_value, dtype=np.float64)
 
     def copy(self) -> "QTable":
         other = QTable(self.n_states, self.n_actions)
