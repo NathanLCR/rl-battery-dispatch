@@ -30,80 +30,85 @@ from src.replay import q_values_for_state, trace_episode
 from src.rule_baseline import greedy_self_consumption_action, price_arbitrage_action_fn, rule_action
 from src.train import greedy_action_fn, load_trained_agent
 from dashboard.landing_animation import pick_demo_day
-from dashboard.landing_page import render_landing_body, render_landing_header
+from dashboard.landing_page import render_landing_body, render_landing_ctas, render_landing_header
 from dashboard.play_vs_agent import render_play_vs_agent
 from dashboard.theme import (
     ACTION_COLORS,
     HOLD,
     inject_theme,
-    render_demo_insight,
+    render_compact_topbar,
     render_kpi_cards,
-    render_mission_topbar,
-    render_policy_note,
     render_sidebar_footer,
     render_sidebar_header,
+    render_winner_line,
 )
 
 DEFAULT_Q = "Q_q_learning_20260704_115627_main.npy"
 DEFAULT_SARSA = "Q_sarsa_20260704_115834_main.npy"
 
 SPLIT_LABELS = {
-    "test": "Test days",
+    "test": "Test days (held out)",
     "val": "Validation days",
     "train": "Training days",
 }
 SIMULATION_DATASET_HELP = (
-    "Choose which group of historical days to replay. Test days were not used during "
-    "training and are best for final demonstration."
+    "Which group of historical days to replay. Test days were not used for training — "
+    "best for demos and fair comparison."
 )
 REWARD_LABELS = {
-    "battery_aware": "Cost + battery health reward",
+    "battery_aware": "Cost + battery wear",
     "cost_only": "Grid cost only",
 }
 ACTION_DISPLAY = {
     "hold": "Hold",
     "charge": "Charge battery",
     "discharge": "Discharge battery",
-    "grid_charge": "Grid-charge (arbitrage)",
-    "export": "Export to grid (arbitrage)",
+    "grid_charge": "Grid-charge (buy)",
+    "export": "Export (sell)",
 }
-POLICY_MAIN_COLUMNS = {
-    "grid_cost_aud": "Cost (AUD)",
-    "export_revenue_aud": "Export revenue",
-    "grid_import_kwh": "Import (kWh)",
-    "export_kwh": "Export (kWh)",
-    "final_soc_pct": "Final SOC",
+
+# Full internal policy name → short table label (one glossary for Twin / Play / tables)
+POLICY_SHORT_NAMES = {
+    "Greedy 5-action (current price)": "Greedy (5-action)",
+    "Current-price Q-Learning": "Current Q",
+    "Privileged Q-Learning (4h foresight)": "Privileged Q (4h)",
+    "Greedy self-consumption baseline": "Solar-only greedy",
+    "Rule-based baseline": "Tertile rule",
+    "SARSA": "SARSA",
+    "Double Q-Learning": "Double Q",
 }
+
 POLICY_DETAIL_COLUMNS = {
-    "total_reward": "Reward",
-    "grid_charge_cost_aud": "Grid-charge cost",
-    "net_arbitrage_profit_aud": "Net arbitrage",
+    "grid_import_kwh": "Grid import (kWh)",
+    "export_kwh": "Export (kWh)",
+    "export_revenue_aud": "Export revenue (AUD)",
+    "grid_charge_cost_aud": "Grid-charge cost (AUD)",
+    "net_arbitrage_profit_aud": "Net arbitrage (AUD)",
+    "self_consumption_rate": "Solar self-use (%)",
+    "self_sufficiency": "Self-sufficiency (%)",
     "battery_throughput_kwh": "Throughput (kWh)",
-    "n_grid_charge_actions": "Grid-charge acts",
-    "n_export_actions": "Export acts",
-    "solar_waste_kwh": "Waste (kWh)",
-    "evening_peak_import_kwh": "Evening import",
+    "n_grid_charge_actions": "# grid-charge steps",
+    "n_export_actions": "# export steps",
+    "total_reward": "Episode reward",
+    "solar_waste_kwh": "Solar waste (kWh)",
+    "evening_peak_import_kwh": "Evening import (kWh)",
 }
-POLICY_TABLE_NOTE = (
-    "Lower grid cost is the main performance metric. Total reward is negative because the "
-    "reward function penalises grid cost, solar waste, and battery degradation."
-)
 TRACE_COLUMN_LABELS = {
     "step": "Timestep",
     "time_label": "Time of day",
     "action": "Action",
-    "soc_pct": "Battery state of charge (%)",
-    "pv_kwh": "Solar generation (kWh)",
-    "load_kwh": "Household demand (kWh)",
-    "price_per_kwh": "Wholesale price (AUD/kWh)",
+    "soc_pct": "Battery SOC (%)",
+    "pv_kwh": "Solar (kWh)",
+    "load_kwh": "Demand (kWh)",
+    "price_per_kwh": "Wholesale (AUD/kWh)",
     "grid_import_kwh": "Grid import (kWh)",
     "solar_waste_kwh": "Solar waste (kWh)",
-    "reward": "Step reward",
+    "reward": "Step score",
     "state": "State index",
 }
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Loading GréineQ data…")
 def load_resources():
     """Load dataset, day split, and discretiser thresholds once per session."""
     cfg = load_config()
@@ -137,10 +142,24 @@ def models_for_agent(agent: str, all_models: list[Path]) -> list[Path]:
     return filtered or all_models
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Loading trained agent…")
 def load_rl_agent(agent_name: str, model_path: str, _cache_key: str):
     cfg = load_config()
     return load_trained_agent(agent_name, Path(model_path), cfg)
+
+
+def _show_results_loader(message: str = "Loading results…") -> None:
+    """Always-visible loading panel (spinner alone can flash too briefly)."""
+    st.markdown(
+        f"""
+        <div class="gq-results-loader">
+            <div class="gq-results-loader-spinner"></div>
+            <div class="gq-results-loader-text">{message}</div>
+            <div class="gq-results-loader-sub">Comparing controllers · please wait</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def greedy_policy_fn(thresholds, cfg):
@@ -254,7 +273,7 @@ def plot_day(
             ax.plot(
                 trace["step"],
                 trace["soc_pct"],
-                label=name,
+                label=_short_policy(name),
                 linewidth=2.0,
                 color=policy_colors[i % len(policy_colors)],
             )
@@ -271,11 +290,11 @@ def plot_day(
             offset = (i - len(traces) / 2 + 0.5) * bar_w
             colors = [ACTION_COLORS.get(a, HOLD) for a in trace["action"]]
             xs = trace["step"].tolist()
-            ax.bar([xi + offset for xi in xs], [1] * len(xs), width=bar_w, color=colors, alpha=0.9, label=name)
+            ax.bar([xi + offset for xi in xs], [1] * len(xs), width=bar_w, color=colors, alpha=0.9, label=_short_policy(name))
         ax.set_yticks([])
         ax.set_xlabel("Time of day (30-minute timesteps)", fontsize=9)
         ax.set_title(
-            "Battery actions (grey=Hold, green=Charge, orange=Discharge, blue=Grid-charge, purple=Export)",
+            "Actions by controller",
             fontweight="600",
             pad=8,
             fontsize=9,
@@ -310,19 +329,51 @@ def _format_action(action: str) -> str:
     return ACTION_DISPLAY.get(str(action).lower(), str(action))
 
 
+def _pick_preview_trace(traces: dict[str, pd.DataFrame] | None) -> tuple[str | None, pd.DataFrame | None]:
+    if not traces:
+        return None, None
+    preferred = (
+        "Greedy 5-action (current price)",
+        "Current-price Q-Learning",
+        "Privileged Q-Learning (4h foresight)",
+        "Greedy self-consumption baseline",
+        "SARSA",
+        "Double Q-Learning",
+        "Rule-based baseline",
+    )
+    name = next((n for n in preferred if n in traces), next(iter(traces), None))
+    return (name, traces.get(name)) if name else (None, None)
+
+
+def _short_policy(name: str) -> str:
+    return POLICY_SHORT_NAMES.get(name, name)
+
+
+def _fmt2(value: object, suffix: str = "") -> str:
+    try:
+        return f"{float(value):.2f}{suffix}"
+    except (TypeError, ValueError):
+        return "—"
+
+
 def _format_policy_metric(column: str, value: object) -> str:
-    x = float(value)
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        return "—"
     if column == "total_reward":
-        return f"{x:.3f}"
-    if column == "grid_cost_aud":
         return f"{x:.2f}"
-    if column in ("grid_import_kwh", "solar_waste_kwh", "evening_peak_import_kwh"):
+    if column.endswith("_aud"):
+        return f"{x:.2f}"
+    if column in ("grid_import_kwh", "solar_waste_kwh", "evening_peak_import_kwh", "export_kwh", "battery_throughput_kwh"):
         return f"{x:.2f}"
     if column in ("self_consumption_rate", "self_sufficiency"):
-        return f"{x * 100:.1f}%"
+        return f"{x * 100:.2f}%"
     if column == "final_soc_pct":
-        return f"{x:.1f}%"
-    return str(value)
+        return f"{x:.2f}%"
+    if column.endswith("_actions"):
+        return f"{int(round(x))}"
+    return f"{x:.2f}"
 
 
 def build_policy_display_table(
@@ -336,6 +387,7 @@ def build_policy_display_table(
         out = out.rename(columns={"policy": "Policy"})
     keep = ["Policy"] + [c for c in metric_cols if c in out.columns]
     out = out[keep].copy()
+    out["Policy"] = out["Policy"].map(_short_policy)
     for col in metric_cols:
         if col in out.columns:
             out[col] = out[col].map(lambda v, c=col: _format_policy_metric(c, v))
@@ -343,17 +395,47 @@ def build_policy_display_table(
     return out.rename(columns=rename)
 
 
-def render_policy_comparison_table(summary_df: pd.DataFrame) -> None:
-    """Main policy metrics table plus optional detailed metrics expander."""
-    main_metrics = [c for c in POLICY_MAIN_COLUMNS if c in summary_df.columns]
-    main_table = build_policy_display_table(summary_df, main_metrics, POLICY_MAIN_COLUMNS)
-    st.table(main_table)
+def render_policy_comparison_table(summary_df: pd.DataFrame, no_bat: float) -> None:
+    """Four-column controller table + detailed metrics expander."""
+    if summary_df.empty:
+        st.info("No policies selected.")
+        return
+
+    rows = []
+    best_idx = summary_df["grid_cost_aud"].idxmin()
+    for policy, row in summary_df.iterrows():
+        cost = float(row["grid_cost_aud"])
+        savings = ((no_bat - cost) / no_bat * 100.0) if no_bat > 0 else 0.0
+        is_best = policy == best_idx
+        label = _short_policy(str(policy))
+        if is_best:
+            label = f"{label} 🏆"
+        rows.append(
+            {
+                "Controller": label,
+                "Net cost": f"AUD {cost:.2f}",
+                "Savings vs no battery": f"{savings:.2f}%",
+                "Final SOC": f"{float(row.get('final_soc_pct', 0)):.2f}%",
+                "_cost": cost,
+            }
+        )
+    table = pd.DataFrame(rows).sort_values("_cost").drop(columns=["_cost"]).reset_index(drop=True)
+
+    def _hl(row: pd.Series) -> list[str]:
+        if "🏆" in str(row["Controller"]):
+            return ["background-color: rgba(34,197,94,0.18); font-weight: 600"] * len(row)
+        return [""] * len(row)
+
+    try:
+        st.dataframe(table.style.apply(_hl, axis=1), width="stretch", hide_index=True)
+    except Exception:
+        st.dataframe(table, width="stretch", hide_index=True)
 
     detail_metrics = [c for c in POLICY_DETAIL_COLUMNS if c in summary_df.columns]
     if detail_metrics:
         with st.expander("Detailed metrics", expanded=False):
             detail_table = build_policy_display_table(summary_df, detail_metrics, POLICY_DETAIL_COLUMNS)
-            st.table(detail_table)
+            st.dataframe(detail_table, width="stretch", hide_index=True)
 
 
 def format_trace(df: pd.DataFrame) -> pd.DataFrame:
@@ -364,13 +446,13 @@ def format_trace(df: pd.DataFrame) -> pd.DataFrame:
     out = df[[c for c in cols if c in df.columns]].copy()
     if "action" in out.columns:
         out["action"] = out["action"].map(_format_action)
-    out["soc_pct"] = out["soc_pct"].map(lambda x: f"{x:.1f}")
-    out["pv_kwh"] = out["pv_kwh"].map(lambda x: f"{x:.3f}")
-    out["load_kwh"] = out["load_kwh"].map(lambda x: f"{x:.3f}")
-    out["price_per_kwh"] = out["price_per_kwh"].map(lambda x: f"{x:.4f}")
-    out["grid_import_kwh"] = out["grid_import_kwh"].map(lambda x: f"{x:.3f}")
-    out["solar_waste_kwh"] = out["solar_waste_kwh"].map(lambda x: f"{x:.3f}")
-    out["reward"] = out["reward"].map(lambda x: f"{x:.4f}")
+    out["soc_pct"] = out["soc_pct"].map(lambda x: f"{float(x):.2f}")
+    out["pv_kwh"] = out["pv_kwh"].map(lambda x: f"{float(x):.2f}")
+    out["load_kwh"] = out["load_kwh"].map(lambda x: f"{float(x):.2f}")
+    out["price_per_kwh"] = out["price_per_kwh"].map(lambda x: f"{float(x):.2f}")
+    out["grid_import_kwh"] = out["grid_import_kwh"].map(lambda x: f"{float(x):.2f}")
+    out["solar_waste_kwh"] = out["solar_waste_kwh"].map(lambda x: f"{float(x):.2f}")
+    out["reward"] = out["reward"].map(lambda x: f"{float(x):.2f}")
     rename = {k: v for k, v in TRACE_COLUMN_LABELS.items() if k in out.columns}
     return out.rename(columns=rename)
 
@@ -384,27 +466,26 @@ def _friendly_model_label(path: Path, agent_label: str) -> str:
     return f"{agent_label} model"
 
 
-def _demo_insight(summary_df: pd.DataFrame) -> str:
-    """Build a short insight about the best policy on the selected day."""
+def _winner_summary(summary_df: pd.DataFrame, no_bat: float) -> tuple[str, str]:
+    """Return (short winner line, longer why text)."""
     if summary_df.empty:
-        return (
-            "Key observation: Compare greedy self-consumption, rule-based baseline, and RL policies "
-            "to see how each strategy manages solar generation, battery state of charge (SOC), and grid import."
-        )
-    best = summary_df["grid_cost_aud"].idxmin()
-    greedy = "Greedy self-consumption baseline"
-    if best == greedy:
-        return (
-            "Key observation: On this simulation day, the greedy self-consumption baseline achieves the "
-            "lowest grid cost by using available solar energy directly and minimising grid import. "
-            "Q-Learning still demonstrates learned battery-dispatch behaviour, although its performance "
-            "is limited by the coarse state discretisation used in the tabular model."
-        )
-    return (
-        f"Key observation: On this simulation day, **{best}** achieves the lowest grid cost among the "
-        f"selected policies. Compare against the greedy self-consumption baseline and rule-based baseline "
-        f"to see how learned dispatch differs from hand-crafted heuristics."
+        return ("No policies selected.", "")
+    best_name = summary_df["grid_cost_aud"].idxmin()
+    best_cost = float(summary_df.loc[best_name, "grid_cost_aud"])
+    saved = no_bat - best_cost
+    short = (
+        f"**Winner: {_short_policy(str(best_name))}** — "
+        f"lowest net cost AUD {best_cost:.2f} "
+        f"(saves AUD {saved:.2f} vs no battery)."
     )
+    why = (
+        f"**What won:** {_short_policy(str(best_name))} had the lowest net electricity cost "
+        f"(AUD {best_cost:.2f}) on this day.\n\n"
+        f"**Vs no battery:** AUD {no_bat:.2f} → saved AUD {saved:.2f}.\n\n"
+        "**Caveat:** Under this experimental wholesale export tariff, simple self-use + "
+        "price heuristics often beat tabular RL when foresight is coarse."
+    )
+    return short, why
 
 
 def _model_selectbox(label: str, agent_label: str, models: list[Path], default_name: str) -> str | None:
@@ -423,7 +504,7 @@ def _model_selectbox(label: str, agent_label: str, models: list[Path], default_n
 
 def main() -> None:
     st.set_page_config(
-        page_title="GréineQ Microgrid Control",
+        page_title="GréineQ — Digital Twin",
         layout="wide",
         page_icon="☀️",
         initial_sidebar_state="expanded",
@@ -440,6 +521,9 @@ def main() -> None:
         elif st.session_state.view == "play":
             _ensure_dashboard_sidebar()
             _render_play()
+        elif st.session_state.view == "results":
+            _ensure_dashboard_sidebar()
+            _render_results()
         else:
             _ensure_dashboard_sidebar()
             _render_app()
@@ -504,38 +588,17 @@ def _ensure_dashboard_sidebar() -> None:
     )
 
 
-def _render_play() -> None:
-    cfg, df, split, thresholds = load_resources()
-    all_models = list_models(cfg)
-    q_models = models_for_agent("q_learning", all_models)
-
-    with st.sidebar:
-        render_sidebar_header()
-        st.caption("Play vs Agent mode")
-        if st.button("Digital twin", use_container_width=True):
-            st.session_state.view = "twin"
-            st.rerun()
-        if st.button("Home", use_container_width=True):
-            st.session_state.view = "home"
-            st.rerun()
-        if render_sidebar_footer():
-            st.session_state.view = "home"
-            st.rerun()
-
-    render_play_vs_agent(cfg=cfg, df=df, split=split, thresholds=thresholds, q_models=q_models)
-
-
 def _render_landing() -> None:
-    if render_landing_header():
+    # Logo + tagline, then compact CTAs, then hero replay
+    render_landing_header(show_cta=False, inject_css=True)
+    twin_clicked, play_clicked = render_landing_ctas(inject_css=False)
+    if twin_clicked:
         st.session_state.view = "twin"
         st.rerun()
-
-    # Extra CTA for play mode
-    if st.button("Play vs Agent — human vs RL", type="secondary"):
+    if play_clicked:
         st.session_state.view = "play"
         st.rerun()
-
-    with st.spinner("Loading agent animation…"):
+    with st.spinner("Loading day replay…"):
         trace, demo_day = get_demo_trace(DEMO_VERSION)
     render_landing_body(trace, demo_day)
 
@@ -652,13 +715,11 @@ def render_live_signal_panel(cfg, df, thresholds, q_models: list[Path]) -> None:
     profile — clearly labelled, not hidden, since that gap is itself part of
     the CA2 theory-vs-deployed story."""
     live = get_live_price()
-    with st.expander("🔴 Live grid signal (real AEMO NSW1 feed) — CA2 extension", expanded=False):
+    with st.expander("Live AEMO price (demo)", expanded=False):
         if live is None:
             st.info(
-                "Live AEMO feed unavailable right now (network/API outage) — falling back to "
-                "historical replay only. This is expected occasionally and is itself a real "
-                "deployment consideration: an autonomous agent needs a defined fallback when its "
-                "live data source drops out."
+                "Live AEMO feed unavailable right now (network/API). Historical replay still works. "
+                "A real deployment needs a defined fallback when the live feed drops."
             )
             return
 
@@ -670,10 +731,13 @@ def render_live_signal_panel(cfg, df, thresholds, q_models: list[Path]) -> None:
             f"Settlement: {live.settlement_time} ({live.region}, {live.period_type}) · "
             f"fetched {live.fetched_at_utc}"
         )
+        st.caption(
+            "Price is live. Solar/load below are historical medians for this hour — not a live meter."
+        )
         cols = st.columns(3)
-        cols[0].metric("Live wholesale price", f"{live.rrp_aud_per_kwh:.4f} AUD/kWh")
-        cols[1].metric("Live retail price (est.)", f"{retail_price:.4f} AUD/kWh")
-        cols[2].metric("Typical PV / load now", f"{pv:.2f} / {load:.2f} kWh")
+        cols[0].metric("Live wholesale", f"{live.rrp_aud_per_kwh:.3f} AUD/kWh")
+        cols[1].metric("Est. retail import", f"{retail_price:.3f} AUD/kWh")
+        cols[2].metric("Typical PV / load", f"{pv:.2f} / {load:.2f} kWh")
 
         if q_models:
             try:
@@ -682,20 +746,125 @@ def render_live_signal_panel(cfg, df, thresholds, q_models: list[Path]) -> None:
                 state = state_index(soc_pct, pv, load, live.rrp_aud_per_kwh, hour, thresholds)
                 action_id = agent.greedy_action(state) if hasattr(agent, "greedy_action") else agent.q.greedy_action(state)
                 action_name = ACTION_DISPLAY.get(ACTION_NAMES[action_id], ACTION_NAMES[action_id])
-                st.markdown(f"**Agent decision right now:** {action_name}")
+                st.markdown(f"**What Current Q would do now:** {action_name}")
             except Exception as exc:  # noqa: BLE001 — best-effort demo panel, never crash the app
                 st.caption(f"(Could not evaluate live agent decision: {exc})")
         st.caption(
-            "Price is real and live. Solar/load are historical medians for this time of day, not "
-            "a live meter — GréineQ has no live smart-meter integration. This mixed setup is a "
-            "deliberate, honest illustration of the gap between a live price signal and a fully "
-            "deployed controller."
+            "This mixed live-price + typical-load setup shows the gap between a price signal "
+            "and a fully metered home deployment."
         )
 
 
+def _render_top_nav(active: str) -> None:
+    """Main nav: Twin | Play | Results, with quieter Overview link."""
+    c1, c2, c3, c4 = st.columns([1.3, 1.3, 1.5, 0.9])
+    with c1:
+        if st.button(
+            "Digital Twin",
+            type="primary" if active == "twin" else "secondary",
+            use_container_width=True,
+            key="nav_twin",
+        ):
+            st.session_state.view = "twin"
+            st.rerun()
+    with c2:
+        if st.button(
+            "Play vs Agent",
+            type="primary" if active == "play" else "secondary",
+            use_container_width=True,
+            key="nav_play",
+        ):
+            st.session_state.view = "play"
+            st.rerun()
+    with c3:
+        if st.button(
+            "Experiment Results",
+            type="primary" if active == "results" else "secondary",
+            use_container_width=True,
+            key="nav_results",
+        ):
+            st.session_state.view = "results"
+            st.rerun()
+    with c4:
+        if st.button("← Overview", use_container_width=True, key="nav_home"):
+            st.session_state.view = "home"
+            st.rerun()
+
+
+def _render_results() -> None:
+    """Curated experiment headline only — no artefact paths or CLI dumps."""
+    _render_top_nav("results")
+    st.markdown("### Experiment Results")
+    st.info(
+        "**Headline:** On the held-out test days, **Greedy (5-action)** beat both "
+        "Current Q and Privileged Q (4h) under the wholesale-export tariff. "
+        "A coarse “will price rise?” signal alone was not enough for tabular Q-Learning."
+    )
+
+    st.markdown(
+        """
+**What was compared**
+- Same tariff, physics, and test days for every controller
+- **Greedy (5-action)** — self-use + price-timed buy/sell
+- **Current Q** — learns from current price only
+- **Privileged Q (4h)** — also sees a 4-hour price-direction signal
+
+**Test-set net cost (AUD, 53 days)**
+
+| Controller | Net cost |
+|---|---|
+| No battery | 160.75 |
+| Perfect foresight (bound) | 74.92 |
+| **Greedy (5-action)** | **90.39** |
+| Current Q (mean ± std) | 124.23 ± 11.65 |
+| Privileged Q (4h) (mean ± std) | 139.68 ± 5.55 |
+
+**Takeaway:** Direction foresight did not beat the greedy heuristic; richer magnitude / timing information may be needed.
+"""
+    )
+
+    csv_path = REPO_ROOT / "results" / "tables" / "forecast_info_by_seed.csv"
+    if csv_path.exists():
+        with st.expander("Per-seed cost table", expanded=False):
+            csv_df = pd.read_csv(csv_path)
+            preferred = [
+                c
+                for c in (
+                    "seed",
+                    "controller",
+                    "agent",
+                    "policy",
+                    "mean_grid_cost_aud",
+                    "grid_cost_aud",
+                    "total_grid_cost_aud",
+                    "win_rate",
+                    "foresight",
+                )
+                if c in csv_df.columns
+            ]
+            st.dataframe(csv_df[preferred] if preferred else csv_df, width="stretch", hide_index=True)
+
+
+def _render_play() -> None:
+    with st.spinner("Loading Play vs Agent…"):
+        cfg, df, split, thresholds = load_resources()
+        all_models = list_models(cfg)
+        q_models = models_for_agent("q_learning", all_models)
+
+    with st.sidebar:
+        render_sidebar_header()
+
+    _render_top_nav("play")
+    render_play_vs_agent(cfg=cfg, df=df, split=split, thresholds=thresholds, q_models=q_models)
+
+    with st.sidebar:
+        render_sidebar_footer()
+
+
 def _render_app() -> None:
-    cfg, df, split, thresholds = load_resources()
-    all_models = list_models(cfg)
+    with st.spinner("Loading Digital Twin…"):
+        cfg, df, split, thresholds = load_resources()
+        all_models = list_models(cfg)
 
     q_models = models_for_agent("q_learning", all_models)
     sarsa_models = models_for_agent("sarsa", all_models)
@@ -706,116 +875,179 @@ def _render_app() -> None:
 
         with st.container(key="sidebar_scroll"):
             split_name = st.selectbox(
-                "Simulation dataset",
+                "Day split",
                 ["test", "val", "train"],
                 index=0,
                 format_func=lambda x: SPLIT_LABELS.get(x, x),
                 help=SIMULATION_DATASET_HELP,
             )
             days = sorted(split.days(split_name))  # type: ignore[arg-type]
-            day = st.selectbox("Simulation day", days)
-            reward_mode = st.selectbox(
-                "Reward function",
-                ["battery_aware", "cost_only"],
-                index=0,
-                format_func=lambda x: REWARD_LABELS.get(x, x),
-            )
+            day = str(st.selectbox("Simulation day", days))
 
-            st.subheader("Policies to compare")
-            if st.button("Open Play vs Agent", use_container_width=True):
-                st.session_state.view = "play"
-                st.rerun()
-            st.caption(
-                "Wholesale-exposed export tariff (experimental): "
-                "export revenue = kWh × wholesale AUD/kWh — not a household FiT."
-            )
+            st.markdown("**Compare controllers**")
             show_arbitrage = st.checkbox(
-                "Greedy 5-action (current price)",
+                "Greedy (5-action)",
                 value=True,
-                help="Self-consumption first, then price-timed grid-charge/export.",
+                help="Self-use surplus solar, plus price-timed grid-charge / export.",
             )
-            show_q = st.checkbox("Current-price Q-Learning", value=True)
+            show_q = st.checkbox(
+                "Current Q",
+                value=True,
+                help="Q-Learning that sees the current price only.",
+            )
             show_q_privileged = st.checkbox(
-                "Privileged Q-Learning (4h foresight)",
+                "Privileged Q (4h)",
                 value=True,
-                help="Same agent family with true four-hour future price-direction in the state.",
+                help="Q-Learning that also sees a 4-hour price-direction signal.",
             )
-            show_greedy = st.checkbox("Greedy self-consumption (solar-only)", value=False)
-            show_rule = st.checkbox("Rule-based baseline", value=False)
-            show_sarsa = st.checkbox("SARSA", value=False)
-            show_dq = st.checkbox("Double Q-Learning", value=False)
 
-            q_current_models = [p for p in q_models if "privileged" not in p.name.lower()]
-            q_priv_models = [p for p in q_models if "privileged" in p.name.lower()]
-            if not q_priv_models:
-                q_priv_models = q_models  # fall back so selector still works
+            run_clicked = st.button("Run comparison", type="primary", use_container_width=True)
+            st.caption("Also refreshes automatically when settings change.")
 
-            need_models = show_q or show_q_privileged or show_sarsa or show_dq
-            if need_models and not all_models:
-                st.error("No trained models in results/models/. Run training first.")
-                show_q = show_q_privileged = show_sarsa = show_dq = False
+            # Defaults so Advanced expander never leaves unbound names
+            reward_mode = "battery_aware"
+            show_greedy = False
+            show_rule = False
+            show_sarsa = False
+            show_dq = False
+            q_model_name = None
+            q_priv_model_name = None
+            sarsa_model_name = None
+            dq_model_name = None
+            show_q_table = False
 
-            q_model_name = (
-                _model_selectbox(
-                    "Current-price Q model", "Current-price Q-Learning", q_current_models, DEFAULT_Q
+            with st.expander("Advanced settings", expanded=False):
+                reward_mode = st.selectbox(
+                    "Reward function",
+                    ["battery_aware", "cost_only"],
+                    index=0,
+                    format_func=lambda x: REWARD_LABELS.get(x, x),
                 )
-                if show_q
-                else None
-            )
-            q_priv_model_name = (
-                _model_selectbox(
-                    "Privileged Q model",
-                    "Privileged Q-Learning",
-                    q_priv_models,
-                    q_priv_models[0].name if q_priv_models else "",
+                show_greedy = st.checkbox(
+                    "Solar-only greedy",
+                    value=False,
+                    help="Self-consumption only — no grid-charge / export arbitrage.",
                 )
-                if show_q_privileged
-                else None
-            )
-            sarsa_model_name = (
-                _model_selectbox("Selected SARSA model", "SARSA", sarsa_models, DEFAULT_SARSA) if show_sarsa else None
-            )
-            dq_model_name = (
-                _model_selectbox("Selected Double Q-Learning model", "Double Q-Learning", dq_models, "")
-                if show_dq
-                else None
-            )
+                show_rule = st.checkbox("Tertile rule baseline", value=False)
+                show_sarsa = st.checkbox("SARSA", value=False)
+                show_dq = st.checkbox("Double Q-Learning", value=False)
 
-            show_q_table = st.checkbox("Show learned Q-values for selected timestep", value=True)
+                q_current_models = [p for p in q_models if "privileged" not in p.name.lower()]
+                q_priv_models = [p for p in q_models if "privileged" in p.name.lower()]
+                if not q_priv_models:
+                    q_priv_models = q_models
 
-            if show_q or show_q_privileged or show_sarsa or show_dq:
-                with st.expander("Technical details", expanded=False):
-                    if show_q and q_model_name:
-                        st.caption(f"Current-price Q file: `{q_model_name}`")
-                    if show_q_privileged and q_priv_model_name:
-                        st.caption(f"Privileged Q file: `{q_priv_model_name}`")
-                    if show_sarsa and sarsa_model_name:
-                        st.caption(f"SARSA file: `{sarsa_model_name}`")
-                    if show_dq and dq_model_name:
-                        st.caption(f"Double Q-Learning file: `{dq_model_name}`")
+                need_models = show_q or show_q_privileged or show_sarsa or show_dq
+                if need_models and not all_models:
+                    st.error("No trained models in results/models/. Run training first.")
+                    show_q = show_q_privileged = show_sarsa = show_dq = False
 
-        if render_sidebar_footer():
-            st.session_state.view = "home"
-            st.rerun()
+                q_model_name = (
+                    _model_selectbox(
+                        "Current Q model", "Current Q", q_current_models, DEFAULT_Q
+                    )
+                    if show_q
+                    else None
+                )
+                q_priv_model_name = (
+                    _model_selectbox(
+                        "Privileged Q model",
+                        "Privileged Q",
+                        q_priv_models,
+                        q_priv_models[0].name if q_priv_models else "",
+                    )
+                    if show_q_privileged
+                    else None
+                )
+                sarsa_model_name = (
+                    _model_selectbox("SARSA model", "SARSA", sarsa_models, DEFAULT_SARSA)
+                    if show_sarsa
+                    else None
+                )
+                dq_model_name = (
+                    _model_selectbox("Double Q model", "Double Q", dq_models, "")
+                    if show_dq
+                    else None
+                )
 
-    episode_df, policies, traces, summaries, no_bat, oracle, step_count = _simulate_episode(
-        cfg,
-        df,
-        thresholds,
-        day=day,
-        reward_mode=reward_mode,
-        show_greedy=show_greedy,
-        show_rule=show_rule,
-        show_arbitrage=show_arbitrage,
-        show_q=show_q,
-        show_q_privileged=show_q_privileged,
-        show_sarsa=show_sarsa,
-        show_dq=show_dq,
-        q_model_name=q_model_name,
-        q_priv_model_name=q_priv_model_name,
-        sarsa_model_name=sarsa_model_name,
-        dq_model_name=dq_model_name,
+                show_q_table = st.checkbox("Show Q-values for selected timestep", value=False)
+
+        sidebar_preview = None
+        sidebar_preview_label = None
+        if "twin_run" in st.session_state:
+            _run = st.session_state.twin_run
+            if _run and len(_run) >= 4 and isinstance(_run[2], dict):
+                sidebar_preview_label, sidebar_preview = _pick_preview_trace(_run[2])
+                if sidebar_preview_label:
+                    sidebar_preview_label = _short_policy(sidebar_preview_label)
+        render_sidebar_footer(sidebar_preview, preview_label=sidebar_preview_label)
+
+    run_key = (
+        day,
+        split_name,
+        reward_mode,
+        show_greedy,
+        show_rule,
+        show_arbitrage,
+        show_q,
+        show_q_privileged,
+        show_sarsa,
+        show_dq,
+        q_model_name,
+        q_priv_model_name,
+        sarsa_model_name,
+        dq_model_name,
     )
+    needs_run = bool(run_clicked) or st.session_state.get("twin_run_key") != run_key
+    # Clear leftover flags from older loader logic
+    st.session_state.pop("twin_loading", None)
+    st.session_state.pop("twin_compute_pending", None)
+
+    # Render nav exactly once per script run (duplicate keys crash Streamlit).
+    _render_top_nav("twin")
+
+    if needs_run:
+        status = st.empty()
+        with status.container():
+            _show_results_loader("Loading comparison results…")
+            try:
+                with st.spinner("Running controllers on the selected day…"):
+                    result = _simulate_episode(
+                        cfg,
+                        df,
+                        thresholds,
+                        day=str(day),
+                        reward_mode=reward_mode,
+                        show_greedy=show_greedy,
+                        show_rule=show_rule,
+                        show_arbitrage=show_arbitrage,
+                        show_q=show_q,
+                        show_q_privileged=show_q_privileged,
+                        show_sarsa=show_sarsa,
+                        show_dq=show_dq,
+                        q_model_name=q_model_name,
+                        q_priv_model_name=q_priv_model_name,
+                        sarsa_model_name=sarsa_model_name,
+                        dq_model_name=dq_model_name,
+                    )
+            except Exception as exc:  # noqa: BLE001 — surface sim errors without sticky loader
+                st.session_state.pop("twin_run", None)
+                st.session_state.pop("twin_run_key", None)
+                status.empty()
+                st.error(f"Comparison failed: {exc}")
+                st.caption("Fix the issue above, then click **Run comparison** again.")
+                return
+        # Commit only after a successful sim so a failed run cannot sticky-loop.
+        st.session_state.twin_run = result
+        st.session_state.twin_run_key = run_key
+        status.empty()
+        # Fall through and render results in this same script run (no extra rerun).
+
+    if "twin_run" not in st.session_state:
+        st.info("Select controllers and click **Run comparison**.")
+        return
+
+    episode_df, policies, traces, summaries, no_bat, oracle, step_count = st.session_state.twin_run
 
     if step_count != 48:
         st.warning("This simulation day has incomplete interval data.")
@@ -828,165 +1060,133 @@ def _render_app() -> None:
         return
 
     if not policies:
-        st.warning("Select at least one policy to compare in the sidebar.")
+        st.warning("Select at least one controller in the sidebar, then Run comparison.")
         return
 
-    split_label = SPLIT_LABELS.get(split_name, split_name)
-    preview_name = next(
-        (
-            n
-            for n in (
-                "Privileged Q-Learning (4h foresight)",
-                "Current-price Q-Learning",
-                "Greedy 5-action (current price)",
-                "Greedy self-consumption baseline",
-                "SARSA",
-                "Double Q-Learning",
-                "Rule-based baseline",
-            )
-            if n in traces
-        ),
-        next(iter(traces), None),
-    )
-    preview_trace = traces.get(preview_name) if preview_name else None
-    render_mission_topbar(
-        "GréineQ Microgrid Control Dashboard",
-        f"Household {cfg.primary_customer_id} · Simulation day: {day} · {split_label}",
-        preview_trace=preview_trace,
-    )
-
-    render_live_signal_panel(cfg, df, thresholds, q_models)
-
     summary_df = pd.DataFrame(summaries).set_index("policy")
-    best_row = summary_df.loc[summary_df["grid_cost_aud"].idxmin()] if len(summary_df) else None
+    best_name = summary_df["grid_cost_aud"].idxmin()
+    best_row = summary_df.loc[best_name]
 
-    pv_total = float(episode_df["pv_kwh"].sum())
-    if best_row is not None:
-        render_kpi_cards([
+    preview_name, preview_trace = _pick_preview_trace(traces)
+    render_compact_topbar(
+        "GréineQ Digital Twin",
+        day=day,
+        action_label=None,
+        status=f"Winner: {_short_policy(str(best_name))} · Preview: {_short_policy(str(preview_name))}",
+    )
+
+    savings_pct = (
+        ((no_bat - float(best_row["grid_cost_aud"])) / no_bat * 100.0) if no_bat > 0 else 0.0
+    )
+    render_kpi_cards(
+        [
             (
-                "Daily grid cost",
-                f"{best_row['grid_cost_aud']:.2f} AUD",
-                f"Best possible cost: {oracle:.2f} AUD",
-                "Estimated cost of electricity imported from the grid for the selected day.",
+                "Winner net cost",
+                f"AUD {float(best_row['grid_cost_aud']):.2f}",
+                f"No battery: AUD {no_bat:.2f}",
+                "Net electricity cost for the winning controller on this day.",
             ),
             (
-                "Energy imported from grid",
-                f"{best_row['grid_import_kwh']:.2f} kWh",
-                f"No-battery cost: {no_bat:.2f} AUD",
-                "Total energy bought from the grid after solar and battery actions.",
+                "Winner savings",
+                f"{savings_pct:.2f}%",
+                f"AUD {no_bat - float(best_row['grid_cost_aud']):.2f} vs no battery",
+                "Percent cost reduction versus a home with no battery.",
             ),
             (
-                "End-of-day battery charge",
-                f"{best_row.get('final_soc_pct', 0):.0f}%",
-                "Battery charge remaining at the end of the day",
-                "Battery state of charge (SOC) at the end of the simulation day.",
+                "Winner final SOC",
+                f"{float(best_row.get('final_soc_pct', 0)):.2f}%",
+                "End of day",
+                "Battery state of charge at the end of the day for the winner.",
             ),
-            (
-                "Solar self-consumption rate",
-                f"{best_row.get('self_consumption_rate', 0):.0%}",
-                f"Solar energy used on-site: {pv_total:.1f} kWh",
-                "Percentage of generated solar energy used locally instead of wasted or exported.",
-            ),
-        ])
-    else:
-        bound_cols = st.columns(2)
-        bound_cols[0].metric(
-            "No-battery baseline cost",
-            f"{no_bat:.2f} AUD",
-            help="Grid import cost if no battery were available.",
-        )
-        bound_cols[1].metric(
-            "Best possible cost",
-            f"{oracle:.2f} AUD",
-            help="Theoretical best result using perfect future knowledge; used only as a benchmark.",
-        )
+        ]
+    )
 
-    st.markdown('<p class="gq-subheader">Policy Performance Comparison</p>', unsafe_allow_html=True)
+    short_win, why_win = _winner_summary(summary_df, no_bat)
+    render_winner_line(short_win)
+    with st.expander(f"Why did {_short_policy(str(best_name))} win?", expanded=False):
+        st.markdown(why_win)
+        st.caption(f"Best possible (perfect foresight import): AUD {oracle:.2f}")
 
-    span = no_bat - oracle
-    if span > 0 and summaries:
-        best = min(s["grid_cost_aud"] for s in summaries)
-        st.caption(
-            f"Best policy captures {(no_bat - best) / span * 100:.1f}% of available oracle savings."
-        )
+    st.markdown("##### Controller comparison")
+    st.caption("Lower net cost is better. Savings are versus a home with no battery.")
+    render_policy_comparison_table(summary_df, no_bat)
 
-    render_policy_comparison_table(summary_df)
-    render_policy_note(POLICY_TABLE_NOTE)
-    render_demo_insight(_demo_insight(summary_df))
+    _render_chart_panel_label("Energy flow")
+    with st.spinner("Rendering energy-flow chart…"):
+        fig = plot_day(traces, episode_df, cfg.tariff.retail_margin_per_kwh, dark=True)
+        st.pyplot(fig, clear_figure=True, width="stretch")
+        plt.close(fig)
 
-    _render_chart_panel_label("Energy Flow Simulation Replay")
-    fig = plot_day(traces, episode_df, cfg.tariff.retail_margin_per_kwh, dark=True)
-    st.pyplot(fig, clear_figure=True, width="stretch")
-    plt.close(fig)
     if episode_df[["pv_kwh", "load_kwh"]].isna().any().any():
         st.caption("Some intervals contain missing solar or load data for this simulation day.")
-    else:
-        st.caption(
-            "All 48 half-hour timesteps are plotted. Solar generation drops to zero after sunset; "
-            "household demand continues through the evening."
-        )
 
-    tab_compare, tab_steps, tab_export = st.tabs(["Actions", "Step Log", "Export"])
+    with st.expander("Step details", expanded=False):
+        tab_compare, tab_steps, tab_export = st.tabs(["Actions", "Step log", "Export"])
 
-    with tab_compare:
-        ref_trace = traces[list(traces.keys())[0]]
-        compare = pd.DataFrame({
-            "Timestep": ref_trace["step"],
-            "Time of day": ref_trace["time_label"],
-        })
-        for name, trace in traces.items():
-            compare[name] = trace["action"].map(_format_action)
-        st.dataframe(compare, width="stretch", height=400)
+        with tab_compare:
+            ref_trace = traces[list(traces.keys())[0]]
+            compare = pd.DataFrame(
+                {
+                    "Timestep": ref_trace["step"],
+                    "Time of day": ref_trace["time_label"],
+                }
+            )
+            for name, trace in traces.items():
+                compare[_short_policy(name)] = trace["action"].map(_format_action)
+            st.dataframe(compare, width="stretch", height=360)
 
-    with tab_steps:
-        policy_pick = st.selectbox("Selected policy", list(traces.keys()))
-        trace = traces[policy_pick]
-        st.dataframe(format_trace(trace), width="stretch", height=420)
+        with tab_steps:
+            policy_pick = st.selectbox(
+                "Selected controller",
+                list(traces.keys()),
+                format_func=_short_policy,
+            )
+            trace = traces[policy_pick]
+            st.dataframe(format_trace(trace), width="stretch", height=360)
 
-        if show_q_table and (
-            ("Current-price Q-Learning" in policy_pick and q_model_name)
-            or ("Privileged Q-Learning" in policy_pick and q_priv_model_name)
-        ):
-            with st.expander("Agent decision explanation (state · action · Q-values)", expanded=True):
-                step_idx = st.slider("Timestep for Q-value lookup", 1, 48, 24) - 1
-                row = trace.iloc[step_idx]
-                state = int(row["state"])
-                model_name = q_priv_model_name if "Privileged" in policy_pick else q_model_name
-                q_agent = load_rl_agent("q_learning", str(cfg.results_models / model_name), model_name)
-                q_vals = q_values_for_state(q_agent.q, state)
-                best_action = max(q_vals, key=q_vals.get)
-                st.markdown(
-                    f"**Timestep {step_idx + 1}** ({row['time_label']}) · "
-                    f"state `{state}` · chosen **{_format_action(row['action'])}** · "
-                    f"SOC {row['soc_pct']:.1f}% · wholesale {row['price_per_kwh']:.4f} AUD/kWh · "
-                    f"export price {row.get('export_price_per_kwh', float('nan')):.4f} AUD/kWh"
-                )
-                if pd.notna(row.get("future_price_delta")):
-                    st.caption(
-                        f"Future price delta (max next 4h − now): {row['future_price_delta']:+.4f} AUD/kWh · "
-                        f"export revenue this step: {row.get('export_revenue_aud', 0):.4f} AUD"
+            if show_q_table and (
+                ("Current-price Q-Learning" in policy_pick and q_model_name)
+                or ("Privileged Q-Learning" in policy_pick and q_priv_model_name)
+            ):
+                with st.expander("Q-values for selected timestep", expanded=True):
+                    step_idx = st.slider("Timestep for Q-value lookup", 1, 48, 24) - 1
+                    row = trace.iloc[step_idx]
+                    state = int(row["state"])
+                    model_name = q_priv_model_name if "Privileged" in policy_pick else q_model_name
+                    q_agent = load_rl_agent(
+                        "q_learning", str(cfg.results_models / model_name), model_name
                     )
-                st.markdown(
-                    f"Greedy Q-argmax would pick **{ACTION_DISPLAY.get(best_action, best_action)}** "
-                    f"(Q={q_vals[best_action]:.4f})."
-                )
-                st.json(q_vals)
+                    q_vals = q_values_for_state(q_agent.q, state)
+                    best_action = max(q_vals, key=q_vals.get)
+                    st.markdown(
+                        f"**Timestep {step_idx + 1}** ({row['time_label']}) · "
+                        f"state `{state}` · chosen **{_format_action(row['action'])}** · "
+                        f"SOC {float(row['soc_pct']):.2f}% · "
+                        f"wholesale {float(row['price_per_kwh']):.2f} AUD/kWh"
+                    )
+                    st.markdown(
+                        f"Greedy Q-argmax would pick **{ACTION_DISPLAY.get(best_action, best_action)}** "
+                        f"(Q={q_vals[best_action]:.2f})."
+                    )
+                    st.json({k: round(float(v), 2) for k, v in q_vals.items()})
 
-    with tab_export:
-        export_payload = {
-            "episode_day": day,
-            "split": split_name,
-            "reward_mode": reward_mode,
-            "bounds": {"no_battery_cost_aud": no_bat, "oracle_cost_aud": oracle},
-            "summaries": summaries,
-            "traces": {name: t.to_dict(orient="records") for name, t in traces.items()},
-        }
-        st.download_button(
-            "Download simulation data (JSON)",
-            data=json.dumps(export_payload, indent=2, default=str),
-            file_name=f"GreineQ_replay_{day}.json",
-            mime="application/json",
-        )
+        with tab_export:
+            export_payload = {
+                "episode_day": day,
+                "split": split_name,
+                "reward_mode": reward_mode,
+                "bounds": {"no_battery_cost_aud": no_bat, "oracle_cost_aud": oracle},
+                "summaries": summaries,
+                "traces": {name: t.to_dict(orient="records") for name, t in traces.items()},
+            }
+            st.download_button(
+                "Download simulation data (JSON)",
+                data=json.dumps(export_payload, indent=2, default=str),
+                file_name=f"GreineQ_replay_{day}.json",
+                mime="application/json",
+            )
+
+    render_live_signal_panel(cfg, df, thresholds, q_models)
 
 
 main()

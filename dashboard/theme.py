@@ -160,7 +160,7 @@ MISSION_CSS = """
         padding: 0 !important;
     }
 
-    /* Hide decorative iframes/orb if any remain in sidebar */
+    /* Sidebar footer hosts the replay iframe — do not hide height ~128 */
     section[data-testid="stSidebar"] iframe[height="150"],
     section[data-testid="stSidebar"] iframe[height="320"] {
         display: none !important;
@@ -423,36 +423,36 @@ MISSION_CSS = """
 
     .gq-kpi-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 0.75rem;
-        margin-bottom: 1rem;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.55rem;
+        margin-bottom: 0.65rem;
         width: 100%;
     }
 
     .gq-kpi-card {
         background: linear-gradient(145deg, #0c1424 0%, #111827 100%);
         border: 1px solid rgba(148, 163, 184, 0.15);
-        border-radius: 12px;
-        padding: 0.85rem 1rem;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        border-radius: 10px;
+        padding: 0.5rem 0.7rem 0.55rem;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
         border-top: 2px solid rgba(245, 156, 26, 0.45);
         min-width: 0;
     }
 
     .gq-kpi-label {
         font-family: 'JetBrains Mono', monospace;
-        font-size: clamp(0.58rem, 1.6vw, 0.68rem);
+        font-size: 0.62rem;
         color: #64748b;
         letter-spacing: 0.04em;
         text-transform: uppercase;
-        margin-bottom: 0.35rem;
-        line-height: 1.35;
+        margin-bottom: 0.15rem;
+        line-height: 1.3;
         word-wrap: break-word;
     }
 
     .gq-kpi-value {
         font-family: 'JetBrains Mono', monospace;
-        font-size: clamp(1.15rem, 3.2vw, 1.75rem);
+        font-size: 1.2rem;
         font-weight: 600;
         color: #f59c1a;
         line-height: 1.15;
@@ -460,14 +460,101 @@ MISSION_CSS = """
     }
 
     .gq-kpi-delta {
-        font-size: clamp(0.58rem, 1.5vw, 0.68rem);
+        font-size: 0.65rem;
         color: #4ade80;
-        margin-top: 0.3rem;
+        margin-top: 0.2rem;
         font-family: 'JetBrains Mono', monospace;
-        line-height: 1.35;
+        line-height: 1.3;
     }
 
     .gq-kpi-delta.neutral { color: #64748b; }
+
+    .gq-compact-topbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.45rem 1rem;
+        padding: 0.25rem 0 0.5rem;
+        margin: 0 0 0.35rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+    }
+
+    .gq-compact-topbar .gq-ct-title {
+        font-family: 'Barlow Condensed', sans-serif;
+        font-weight: 700;
+        font-size: 1rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #f8fafc;
+        margin: 0;
+    }
+
+    .gq-compact-topbar .gq-ct-meta {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.7rem;
+        color: #94a3b8;
+    }
+
+    .gq-compact-topbar .gq-ct-action {
+        margin-left: auto;
+        font-size: 0.78rem;
+        color: #fde68a;
+        font-weight: 600;
+    }
+
+    .gq-winner-line {
+        margin: 0.1rem 0 0.5rem;
+        padding: 0.4rem 0.65rem;
+        border-radius: 8px;
+        background: rgba(34, 197, 94, 0.08);
+        border: 1px solid rgba(34, 197, 94, 0.22);
+        color: #e2e8f0;
+        font-size: 0.86rem;
+    }
+
+    .gq-winner-line strong { color: #86efac; }
+
+    .gq-results-loader {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+        min-height: 220px;
+        margin: 0.75rem 0 1.25rem;
+        padding: 1.5rem 1rem;
+        border-radius: 14px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(12, 20, 36, 0.98));
+    }
+
+    .gq-results-loader-spinner {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        border: 3px solid rgba(148, 163, 184, 0.25);
+        border-top-color: #fbbf24;
+        animation: gq-spin 0.8s linear infinite;
+    }
+
+    .gq-results-loader-text {
+        font-family: 'Barlow Condensed', sans-serif;
+        font-size: 1.15rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #f8fafc;
+    }
+
+    .gq-results-loader-sub {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.72rem;
+        color: #94a3b8;
+    }
+
+    @keyframes gq-spin {
+        to { transform: rotate(360deg); }
+    }
 
     .gq-twin-banner {
         display: none;
@@ -750,36 +837,17 @@ MISSION_CSS = """
             rgba(245, 156, 26, 0.35) 80%,
             transparent 100%
         );
-        margin: 0 0.35rem 0.75rem;
+        margin: 0 0.35rem 0.55rem;
     }
 
-    .st-key-sidebar_footer [data-testid="stButton"],
-    .st-key-sidebar_footer .stButton {
-        margin: 0 !important;
-        width: 100% !important;
+    .st-key-sidebar_footer [data-testid="stCaptionContainer"] {
+        margin: 0 0 0.15rem !important;
+        text-align: center;
     }
 
-    .st-key-sidebar_footer .stButton > button,
-    .st-key-sidebar_footer button {
-        width: 100% !important;
-        background: rgba(15, 23, 42, 0.75) !important;
-        color: #cbd5e1 !important;
-        border: 1px solid rgba(245, 156, 26, 0.22) !important;
-        border-radius: 8px !important;
-        font-family: 'Barlow', sans-serif !important;
-        font-size: 0.74rem !important;
-        font-weight: 500 !important;
-        letter-spacing: 0.02em !important;
-        text-transform: none !important;
-        padding: 0.55rem 0.75rem !important;
-        box-shadow: none !important;
-    }
-
-    .st-key-sidebar_footer .stButton > button:hover,
-    .st-key-sidebar_footer button:hover {
-        background: rgba(245, 156, 26, 0.1) !important;
-        color: #fde68a !important;
-        border-color: rgba(245, 156, 26, 0.35) !important;
+    .st-key-sidebar_footer iframe {
+        display: block !important;
+        margin: 0 auto !important;
     }
 
     .st-key-sidebar_header + div hr {
@@ -819,16 +887,25 @@ def render_sidebar_header() -> None:
         st.markdown('<div class="gq-sidebar-divider"></div>', unsafe_allow_html=True)
 
 
-def render_sidebar_footer() -> bool:
-    """Fixed sidebar footer: divider and return-to-landing control."""
+def render_sidebar_footer(preview_trace=None, *, preview_label: str | None = None) -> None:
+    """Pinned sidebar footer: energy-flow replay animation (no back button)."""
     with st.container(key="sidebar_footer"):
         st.markdown('<div class="gq-sidebar-footer-divider"></div>', unsafe_allow_html=True)
-        return st.button(
-            "← Back to Landing Page",
-            key="back_overview_nav",
-            help="Return to the landing page",
-            width="stretch",
-        )
+        if preview_trace is None or len(preview_trace) == 0:
+            return
+        try:
+            from dashboard.dispatch_widget import render_topbar_dispatch
+
+            caption = f"Replay · {preview_label}" if preview_label else "Replay"
+            st.caption(caption)
+            render_topbar_dispatch(
+                preview_trace["action"].tolist(),
+                preview_trace["time_label"].tolist(),
+                preview_trace["soc_pct"].tolist(),
+                show_action_badge=False,
+            )
+        except Exception:
+            st.caption("Replay unavailable")
 
 
 def render_sidebar_brand() -> None:
@@ -885,12 +962,47 @@ def render_mission_topbar(
             )
 
 
+def render_compact_topbar(
+    title: str,
+    day: str,
+    action_label: str | None = None,
+    status: str = "Replay ready",
+) -> None:
+    """One-row digital-twin header (no embedded animation)."""
+    safe_title = html_lib.escape(title)
+    safe_day = html_lib.escape(str(day))
+    safe_status = html_lib.escape(status)
+    action_html = (
+        f'<span class="gq-ct-action">{html_lib.escape(action_label)}</span>'
+        if action_label
+        else ""
+    )
+    st.markdown(
+        f"""
+        <div class="gq-compact-topbar">
+            <h2 class="gq-ct-title">{safe_title}</h2>
+            <span class="gq-ct-meta">Day {safe_day}</span>
+            <span class="gq-ct-meta">{safe_status}</span>
+            {action_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_winner_line(text: str) -> None:
+    import re
+
+    html = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+    st.markdown(f'<div class="gq-winner-line">{html}</div>', unsafe_allow_html=True)
+
+
 def render_kpi_cards(cards: list[tuple[str, str, str | None, str | None]]) -> None:
-    """Render responsive KPI grid: label, value, optional benchmark, optional help tooltip."""
+    """Render compact KPI grid (up to 3 cards)."""
     import html as html_lib
 
     parts: list[str] = []
-    for label, value, benchmark, help_text in cards[:4]:
+    for label, value, benchmark, help_text in cards[:3]:
         bench_html = (
             f'<div class="gq-kpi-delta">{html_lib.escape(benchmark)}</div>' if benchmark else ""
         )
