@@ -10,12 +10,13 @@ import numpy as np
 import pandas as pd
 
 from src.config import Config, load_config
+from src.constants import N_ACTIONS
 
 N_SOC_BINS = 3
 N_FEATURE_BINS = 3
 N_TIME_BINS = 4
-N_ACTIONS = 3
 # State = (soc, pv, load, price, time_of_day) -> 3 * 3^3 * 4 = 324 discrete states
+# Action space (5, incl. CA2 grid-charge/export) does not affect state count.
 N_STATES = N_SOC_BINS * N_FEATURE_BINS**3 * N_TIME_BINS  # 324
 
 

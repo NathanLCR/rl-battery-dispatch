@@ -12,7 +12,7 @@ from matplotlib.patches import Patch
 
 from src.agents.q_table import QTable
 from src.config import load_config
-from src.constants import ACTION_NAMES
+from src.constants import ACTION_NAMES, N_ACTIONS
 from src.discretizer import (
     N_FEATURE_BINS,
     N_SOC_BINS,
@@ -20,7 +20,8 @@ from src.discretizer import (
     decode_state_index,
 )
 
-ACTION_COLORS = ["#94a3b8", "#22c55e", "#f97316"]  # hold, charge, discharge
+# hold, charge, discharge, grid_charge, export
+ACTION_COLORS = ["#94a3b8", "#22c55e", "#f97316", "#0ea5e9", "#a855f7"]
 SOC_LABELS = ["low", "mid", "high"]
 PRICE_LABELS = ["cheap", "mid", "pricey"]
 TIME_LABELS = ["Night", "Morning", "Afternoon", "Evening"]
@@ -37,7 +38,7 @@ def plot_policy_panels(q: QTable, out_path: Path) -> None:
     n_states = q.table.shape[0]
     decoded = np.array([decode_state_index(s) for s in range(n_states)])  # (s,p,l,r,t)
 
-    cmap = ListedColormap(ACTION_COLORS)
+    cmap = ListedColormap(ACTION_COLORS[:N_ACTIONS])
     fig, axes = plt.subplots(1, N_TIME_BINS, figsize=(4 * N_TIME_BINS, 3.6), sharey=True)
 
     for t in range(N_TIME_BINS):
@@ -46,10 +47,10 @@ def plot_policy_panels(q: QTable, out_path: Path) -> None:
             for price in range(N_FEATURE_BINS):
                 mask = (decoded[:, 0] == soc) & (decoded[:, 3] == price) & (decoded[:, 4] == t)
                 acts = policy[mask]
-                grid[soc, price] = np.bincount(acts, minlength=3).argmax() if len(acts) else 0
+                grid[soc, price] = np.bincount(acts, minlength=N_ACTIONS).argmax() if len(acts) else 0
 
         ax = axes[t]
-        ax.imshow(grid, cmap=cmap, vmin=0, vmax=2, aspect="auto", origin="lower")
+        ax.imshow(grid, cmap=cmap, vmin=0, vmax=N_ACTIONS - 1, aspect="auto", origin="lower")
         ax.set_title(TIME_LABELS[t])
         ax.set_xticks(range(N_FEATURE_BINS), PRICE_LABELS)
         ax.set_yticks(range(N_SOC_BINS), SOC_LABELS)
@@ -61,7 +62,7 @@ def plot_policy_panels(q: QTable, out_path: Path) -> None:
                 ax.text(price, soc, ACTION_NAMES[grid[soc, price]][:4],
                         ha="center", va="center", fontsize=8, color="black")
 
-    handles = [Patch(color=ACTION_COLORS[a], label=ACTION_NAMES[a]) for a in range(3)]
+    handles = [Patch(color=ACTION_COLORS[a], label=ACTION_NAMES[a]) for a in range(N_ACTIONS)]
     fig.suptitle("Greedy policy by SOC and price (majority over PV/load bins)", y=1.06)
     fig.legend(handles=handles, loc="lower center", ncol=3, fontsize=9,
                frameon=False, bbox_to_anchor=(0.5, -0.08))
@@ -78,7 +79,7 @@ def plot_q_heatmap(q: QTable, out_path: Path) -> None:
     shown = table[visited]
     fig, ax = plt.subplots(figsize=(4.5, 9))
     im = ax.imshow(shown, aspect="auto", cmap="viridis")
-    ax.set_xticks(range(3), [ACTION_NAMES[a] for a in range(3)])
+    ax.set_xticks(range(N_ACTIONS), [ACTION_NAMES[a] for a in range(N_ACTIONS)])
     ax.set_xlabel("Action")
     ax.set_ylabel(f"Visited state (n={visited.sum()} of {len(table)})")
     ax.set_title("Q-values")

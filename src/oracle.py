@@ -6,8 +6,10 @@ import numpy as np
 import pandas as pd
 
 from src.config import Config
-from src.constants import CHARGE, DISCHARGE, HOLD
+from src.constants import CHARGE, DISCHARGE, EXPORT, GRID_CHARGE, HOLD
 from src.physics import apply_battery_action
+
+ALL_ACTIONS = (HOLD, CHARGE, DISCHARGE, GRID_CHARGE, EXPORT)
 
 
 def no_battery_import_cost(episode_df: pd.DataFrame, cfg: Config) -> float:
@@ -26,15 +28,22 @@ def oracle_perfect_foresight_import(
     episode_df: pd.DataFrame,
     cfg: Config,
     n_soc_bins: int = 101,
+    actions: tuple[int, ...] = ALL_ACTIONS,
 ) -> float:
     """
-    Minimum retail import bill over 48 steps with perfect foresight (backward DP).
+    Minimum net grid cost (import bill minus export revenue) over 48 steps with
+    perfect foresight (backward DP).
+
+    ``actions`` defaults to the full 5-action arbitrage set (CA2). Pass
+    ``(HOLD, CHARGE, DISCHARGE)`` to reproduce the CA1 solar-only oracle bound
+    for an apples-to-apples comparison against the original findings.
     """
     n_steps = len(episode_df)
     capacity = cfg.battery_capacity_kwh
     min_soc_kwh = cfg.min_soc_pct / 100.0 * capacity
     max_soc_kwh = cfg.max_soc_pct / 100.0 * capacity
     soc_grid = np.linspace(min_soc_kwh, max_soc_kwh, n_soc_bins)
+    feed_in = cfg.tariff.feed_in_per_kwh
 
     def soc_to_idx(soc_kwh: float) -> int:
         if soc_kwh <= min_soc_kwh:
@@ -55,9 +64,9 @@ def oracle_perfect_foresight_import(
         for si, soc_kwh in enumerate(soc_grid):
             soc_pct = soc_kwh / capacity * 100.0
             best = np.inf
-            for action in (HOLD, CHARGE, DISCHARGE):
+            for action in actions:
                 physics = apply_battery_action(soc_pct, action, pv, load, cfg)
-                step_cost = physics["grid_import_kwh"] * retail
+                step_cost = physics["grid_import_kwh"] * retail - physics["export_kwh"] * feed_in
                 nj = soc_to_idx(physics["soc_kwh"])
                 best = min(best, step_cost + v[nj])
             v_next[si] = best

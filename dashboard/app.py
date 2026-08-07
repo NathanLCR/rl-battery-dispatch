@@ -21,11 +21,13 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.config import load_config
 from src.data_loader import get_episode, load_customer_dataset
-from src.discretizer import fit_discretizer
+from src.constants import ACTION_NAMES
+from src.discretizer import fit_discretizer, state_index
 from src.environment import MicrogridEnv
+from src.live_feed import LiveFeedError, current_local_hour, fetch_latest_price, typical_pv_load_for_time
 from src.oracle import no_battery_import_cost, oracle_perfect_foresight_import
 from src.replay import q_values_for_state, trace_episode
-from src.rule_baseline import greedy_self_consumption_action, rule_action
+from src.rule_baseline import greedy_self_consumption_action, price_arbitrage_action_fn, rule_action
 from src.train import greedy_action_fn, load_trained_agent
 from dashboard.landing_animation import pick_demo_day
 from dashboard.landing_page import render_landing_body, render_landing_header
@@ -61,6 +63,8 @@ ACTION_DISPLAY = {
     "hold": "Hold",
     "charge": "Charge battery",
     "discharge": "Discharge battery",
+    "grid_charge": "Grid-charge (arbitrage)",
+    "export": "Export to grid (arbitrage)",
 }
 POLICY_MAIN_COLUMNS = {
     "grid_cost_aud": "Cost (AUD)",
@@ -159,6 +163,11 @@ def rule_policy_fn(thresholds):
         )
 
     return policy
+
+
+def arbitrage_rule_policy_fn():
+    """CA2 heuristic: greedy self-consumption plus price-timed grid-charge/export."""
+    return price_arbitrage_action_fn
 
 
 def plot_day(
@@ -260,7 +269,7 @@ def plot_day(
         ax.set_yticks([])
         ax.set_xlabel("Time of day (30-minute timesteps)", fontsize=9)
         ax.set_title(
-            "Battery actions (grey = Hold, green = Charge, orange = Discharge)",
+            "Battery actions (grey=Hold, green=Charge, orange=Discharge, blue=Grid-charge, purple=Export)",
             fontweight="600",
             pad=8,
             fontsize=9,
@@ -435,17 +444,18 @@ def main() -> None:
         )
 
 
-DEMO_VERSION = "live-html-v1"
+DEMO_VERSION = "live-html-v2-arbitrage"
 
 
 @st.cache_data(show_spinner="Loading agent animation…")
 def get_demo_trace(_version: str) -> tuple[object, str]:
-    """Load one-day greedy-SC trace for the landing dispatch animation."""
+    """Load one-day price-arbitrage trace for the landing dispatch animation
+    (CA2: showcases grid-charge/export alongside the CA1 solar-only actions)."""
     cfg, df, split, thresholds = load_resources()
     test_days = sorted(split.test)
     day = pick_demo_day(df, test_days)
     episode_df = get_episode(df, day)
-    policy = greedy_policy_fn(thresholds, cfg)
+    policy = arbitrage_rule_policy_fn()
     trace, _ = trace_episode(episode_df, thresholds, policy, cfg)
     return trace, day
 
@@ -504,6 +514,7 @@ def _simulate_episode(
     reward_mode: str,
     show_greedy: bool,
     show_rule: bool,
+    show_arbitrage: bool,
     show_q: bool,
     show_sarsa: bool,
     show_dq: bool,
@@ -529,6 +540,8 @@ def _simulate_episode(
         policies["Greedy self-consumption baseline"] = greedy_policy_fn(thresholds, cfg)
     if show_rule:
         policies["Rule-based baseline"] = rule_policy_fn(thresholds)
+    if show_arbitrage:
+        policies["Price-arbitrage rule (CA2)"] = arbitrage_rule_policy_fn()
     if show_q and q_model_name:
         q_agent = load_rl_agent("q_learning", str(cfg.results_models / q_model_name), q_model_name)
         policies["Q-Learning"] = greedy_action_fn(q_agent)
@@ -550,6 +563,65 @@ def _simulate_episode(
             summaries.append(summary)
 
     return episode_df, policies, traces, summaries, no_bat, oracle, step_count
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def get_live_price():
+    """Cached live AEMO NSW1 price fetch (30s TTL). Returns None on any failure —
+    live mode is a best-effort add-on and must never break the core dashboard."""
+    try:
+        return fetch_latest_price()
+    except LiveFeedError:
+        return None
+
+
+def render_live_signal_panel(cfg, df, thresholds, q_models: list[Path]) -> None:
+    """CA2 real-world extension: show the *actual current* AEMO NSW1 wholesale
+    price (not a historical replay) and what the trained agent would do right
+    now. Household PV/load are not available live, so this combines the real
+    live price with a representative (median-by-time-of-day) solar/load
+    profile — clearly labelled, not hidden, since that gap is itself part of
+    the CA2 theory-vs-deployed story."""
+    live = get_live_price()
+    with st.expander("🔴 Live grid signal (real AEMO NSW1 feed) — CA2 extension", expanded=False):
+        if live is None:
+            st.info(
+                "Live AEMO feed unavailable right now (network/API outage) — falling back to "
+                "historical replay only. This is expected occasionally and is itself a real "
+                "deployment consideration: an autonomous agent needs a defined fallback when its "
+                "live data source drops out."
+            )
+            return
+
+        hour = current_local_hour()
+        pv, load = typical_pv_load_for_time(df, hour)
+        retail_price = live.rrp_aud_per_kwh + cfg.tariff.retail_margin_per_kwh
+
+        st.caption(
+            f"Settlement: {live.settlement_time} ({live.region}, {live.period_type}) · "
+            f"fetched {live.fetched_at_utc}"
+        )
+        cols = st.columns(3)
+        cols[0].metric("Live wholesale price", f"{live.rrp_aud_per_kwh:.4f} AUD/kWh")
+        cols[1].metric("Live retail price (est.)", f"{retail_price:.4f} AUD/kWh")
+        cols[2].metric("Typical PV / load now", f"{pv:.2f} / {load:.2f} kWh")
+
+        if q_models:
+            try:
+                agent = load_rl_agent("q_learning", str(q_models[0]), q_models[0].name)
+                soc_pct = cfg.initial_soc_pct  # illustrative — no live SOC feed either
+                state = state_index(soc_pct, pv, load, live.rrp_aud_per_kwh, hour, thresholds)
+                action_id = agent.greedy_action(state) if hasattr(agent, "greedy_action") else agent.q.greedy_action(state)
+                action_name = ACTION_DISPLAY.get(ACTION_NAMES[action_id], ACTION_NAMES[action_id])
+                st.markdown(f"**Agent decision right now:** {action_name}")
+            except Exception as exc:  # noqa: BLE001 — best-effort demo panel, never crash the app
+                st.caption(f"(Could not evaluate live agent decision: {exc})")
+        st.caption(
+            "Price is real and live. Solar/load are historical medians for this time of day, not "
+            "a live meter — GréineQ has no live smart-meter integration. This mixed setup is a "
+            "deliberate, honest illustration of the gap between a live price signal and a fully "
+            "deployed controller."
+        )
 
 
 def _render_app() -> None:
@@ -583,6 +655,11 @@ def _render_app() -> None:
             st.subheader("Policies to compare")
             show_greedy = st.checkbox("Greedy self-consumption baseline", value=True)
             show_rule = st.checkbox("Rule-based baseline", value=False)
+            show_arbitrage = st.checkbox(
+                "Price-arbitrage rule (CA2)",
+                value=False,
+                help="Greedy self-consumption plus price-timed grid-charge/export using the extended 5-action space.",
+            )
             show_q = st.checkbox("Q-Learning", value=True)
             show_sarsa = st.checkbox("SARSA", value=False)
             show_dq = st.checkbox("Double Q-Learning", value=False)
@@ -627,6 +704,7 @@ def _render_app() -> None:
         reward_mode=reward_mode,
         show_greedy=show_greedy,
         show_rule=show_rule,
+        show_arbitrage=show_arbitrage,
         show_q=show_q,
         show_sarsa=show_sarsa,
         show_dq=show_dq,
@@ -670,6 +748,8 @@ def _render_app() -> None:
         f"Household {cfg.primary_customer_id} · Simulation day: {day} · {split_label}",
         preview_trace=preview_trace,
     )
+
+    render_live_signal_panel(cfg, df, thresholds, q_models)
 
     summary_df = pd.DataFrame(summaries).set_index("policy")
     best_row = summary_df.loc[summary_df["grid_cost_aud"].idxmin()] if len(summary_df) else None

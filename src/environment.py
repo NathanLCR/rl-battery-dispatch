@@ -7,9 +7,18 @@ from typing import Any
 import pandas as pd
 
 from src.config import Config, RewardWeights, load_config
-from src.constants import CHARGE, DISCHARGE, HOLD, N_ACTIONS
+from src.constants import CHARGE, DISCHARGE, EXPORT, GRID_CHARGE, HOLD, N_ACTIONS
 from src.discretizer import BinThresholds, state_index
 from src.physics import apply_battery_action
+
+VALID_ACTIONS = (HOLD, CHARGE, DISCHARGE, GRID_CHARGE, EXPORT)
+ACTION_NAME_LOOKUP = {
+    HOLD: "hold",
+    CHARGE: "charge",
+    DISCHARGE: "discharge",
+    GRID_CHARGE: "grid_charge",
+    EXPORT: "export",
+}
 
 
 class MicrogridEnv:
@@ -37,6 +46,9 @@ class MicrogridEnv:
         self.total_grid_cost = 0.0
         self.total_grid_import_kwh = 0.0
         self.total_solar_waste_kwh = 0.0
+        self.total_export_kwh = 0.0
+        self.total_export_revenue = 0.0
+        self.total_grid_charge_kwh = 0.0
 
     @staticmethod
     def _resolve_reward_weights(mode: str, cfg: Config) -> RewardWeights:
@@ -56,10 +68,13 @@ class MicrogridEnv:
         self.total_grid_cost = 0.0
         self.total_grid_import_kwh = 0.0
         self.total_solar_waste_kwh = 0.0
+        self.total_export_kwh = 0.0
+        self.total_export_revenue = 0.0
+        self.total_grid_charge_kwh = 0.0
         return self._observe()
 
     def step(self, action: int) -> tuple[int, float, bool, dict[str, Any]]:
-        if action not in (HOLD, CHARGE, DISCHARGE):
+        if action not in VALID_ACTIONS:
             raise ValueError(f"Invalid action {action}")
 
         row = self.episode_df.iloc[self._step_idx]
@@ -67,13 +82,18 @@ class MicrogridEnv:
         load_kwh = float(row["load_kwh"])
         price = float(row["price_per_kwh"])
         retail_price = price + self.cfg.tariff.retail_margin_per_kwh
+        feed_in_price = self.cfg.tariff.feed_in_per_kwh
 
         physics = apply_battery_action(self._soc_pct, action, pv_kwh, load_kwh, self.cfg)
-        reward = self._compute_reward(physics, retail_price)
+        reward = self._compute_reward(physics, retail_price, feed_in_price)
 
-        self.total_grid_cost += physics["grid_import_kwh"] * retail_price
+        export_revenue = physics["export_kwh"] * feed_in_price
+        self.total_grid_cost += physics["grid_import_kwh"] * retail_price - export_revenue
         self.total_grid_import_kwh += physics["grid_import_kwh"]
         self.total_solar_waste_kwh += physics["solar_waste_kwh"]
+        self.total_export_kwh += physics["export_kwh"]
+        self.total_export_revenue += export_revenue
+        self.total_grid_charge_kwh += physics["grid_charge_kwh"]
 
         self._soc_pct = physics["soc_pct"]
         self._step_idx += 1
@@ -83,12 +103,14 @@ class MicrogridEnv:
             "episode_day": self._episode_day,
             "step": self._step_idx,
             "action": action,
-            "action_name": {HOLD: "hold", CHARGE: "charge", DISCHARGE: "discharge"}[action],
+            "action_name": ACTION_NAME_LOOKUP[action],
             "soc_pct": self._soc_pct,
             "pv_kwh": pv_kwh,
             "load_kwh": load_kwh,
             "price_per_kwh": price,
             "retail_price_per_kwh": retail_price,
+            "feed_in_price_per_kwh": feed_in_price,
+            "export_revenue_aud": export_revenue,
             **physics,
         }
 
@@ -108,8 +130,11 @@ class MicrogridEnv:
             self.thresholds,
         )
 
-    def _compute_reward(self, physics: dict[str, float], retail_price_per_kwh: float) -> float:
-        """Negative household cost (AUD): import bill, curtailed solar, battery wear."""
+    def _compute_reward(
+        self, physics: dict[str, float], retail_price_per_kwh: float, feed_in_price_per_kwh: float
+    ) -> float:
+        """Negative household cost (AUD): import bill, curtailed solar, battery wear,
+        net of any export revenue (CA2 arbitrage extension)."""
         w = self.reward_weights
         tar = self.cfg.tariff
         capacity = self.cfg.battery_capacity_kwh
@@ -117,11 +142,13 @@ class MicrogridEnv:
         import_cost = physics["grid_import_kwh"] * retail_price_per_kwh
         solar_opp_cost = physics["solar_waste_kwh"] * tar.feed_in_per_kwh
         deg_cost = physics["battery_deg"] * capacity * tar.battery_deg_cost_per_kwh
+        export_revenue = physics["export_kwh"] * feed_in_price_per_kwh
 
         reward = 0.0
         reward -= w.w_grid_cost * import_cost
         reward -= w.w_solar_waste * solar_opp_cost
         reward -= w.w_battery_deg * deg_cost
+        reward += w.w_export_revenue * export_revenue
         if physics["invalid_action"]:
             reward -= w.w_invalid_action
         return float(reward)

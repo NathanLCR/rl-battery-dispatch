@@ -20,8 +20,16 @@ BORDER = "rgba(148, 163, 184, 0.18)"
 CHARGE = "#22c55e"
 DISCHARGE = "#f59c1a"
 HOLD = "#64748b"
+GRID_CHARGE = "#0ea5e9"
+EXPORT = "#a855f7"
 
-ACTION_COLORS = {"hold": HOLD, "charge": CHARGE, "discharge": DISCHARGE}
+ACTION_COLORS = {
+    "hold": HOLD,
+    "charge": CHARGE,
+    "discharge": DISCHARGE,
+    "grid_charge": GRID_CHARGE,
+    "export": EXPORT,
+}
 
 MISSION_CSS = """
 <style>
