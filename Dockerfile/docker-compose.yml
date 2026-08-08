@@ -3,16 +3,16 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile/Dockerfile
-    container_name: greineq-dashboard
+    container_name: greineq-web
     restart: unless-stopped
     ports:
-      - "${GREINEQ_PORT:-8501}:8501"
+      # Host port → container 8000 (Web Twin). Default 8501 keeps the same public URL mapping.
+      - "${GREINEQ_PORT:-8501}:8000"
     volumes:
       # Required (not in git): data/merged_30min_v2.csv, data/day_split.json
       - ../data:/app/data:ro
-      # Optional: pre-built demo GIF cache (auto-created on first visit if missing)
       - ../artifacts:/app/artifacts
-      # Optional: trained RL policies (Q_*.npy); app runs with Greedy only if empty
+      # Required for Current/Privileged Q: 540/1620-state forecast_exp models
       - ../results:/app/results:ro
     mem_limit: 2g
 

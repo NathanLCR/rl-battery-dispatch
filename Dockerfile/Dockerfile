@@ -15,13 +15,13 @@ RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-COPY Dockerfile/.streamlit/config.docker.toml .streamlit/config.toml
 
 RUN mkdir -p artifacts results/models results/logs results/plots
 
-EXPOSE 8501
+# Web Twin (FastAPI) — not Streamlit
+EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health')"
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"
 
-CMD ["python", "-m", "streamlit", "run", "dashboard/app.py"]
+CMD ["python", "-m", "uvicorn", "webapp.main:app", "--host", "0.0.0.0", "--port", "8000"]
