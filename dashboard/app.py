@@ -155,6 +155,27 @@ def load_rl_agent(agent_name: str, model_path: str, _cache_key: str):
     return load_trained_agent(agent_name, Path(model_path), cfg)
 
 
+def _require_compatible_q_table(agent, *, privileged: bool, model_name: str) -> None:
+    """Fail fast when deployed models still use the old 324-state table."""
+    from src.discretizer import N_STATES, N_STATES_PRIVILEGED
+
+    expected = N_STATES_PRIVILEGED if privileged else N_STATES
+    if hasattr(agent, "q") and hasattr(agent.q, "n_states"):
+        n_states = int(agent.q.n_states)
+    elif hasattr(agent, "q_a") and hasattr(agent.q_a, "n_states"):
+        n_states = int(agent.q_a.n_states)
+    else:
+        return
+    if n_states == expected:
+        return
+    raise ValueError(
+        f"Model '{model_name}' has {n_states} states; this Twin expects {expected} "
+        f"({'privileged' if privileged else 'current'}). "
+        "Old CA1 tables used 324 states. On the host, put matching forecast_exp "
+        ".npy files in results/models/ (540 current / 1620 privileged) and rebuild the container."
+    )
+
+
 def _show_results_loader(message: str = "Loading results…") -> None:
     """Always-visible loading panel (spinner alone can flash too briefly)."""
     st.markdown(
@@ -633,18 +654,22 @@ def _simulate_episode(
         policies["Greedy 5-action (current price)"] = (arbitrage_rule_policy_fn(), False, "none")
     if show_q and q_model_name:
         q_agent = load_rl_agent("q_learning", str(cfg.results_models / q_model_name), q_model_name)
+        _require_compatible_q_table(q_agent, privileged=False, model_name=q_model_name)
         policies["Current-price Q-Learning"] = (greedy_action_fn(q_agent), False, "none")
     if show_q_privileged and q_priv_model_name:
         qp_agent = load_rl_agent(
             "q_learning", str(cfg.results_models / q_priv_model_name), q_priv_model_name
         )
+        _require_compatible_q_table(qp_agent, privileged=True, model_name=q_priv_model_name)
         fm = cfg.forecast_mode if cfg.forecast_mode in ("oracle", "forecast") else "forecast"
         policies["Privileged Q-Learning (4h foresight)"] = (greedy_action_fn(qp_agent), True, fm)
     if show_sarsa and sarsa_model_name:
         s_agent = load_rl_agent("sarsa", str(cfg.results_models / sarsa_model_name), sarsa_model_name)
+        _require_compatible_q_table(s_agent, privileged=False, model_name=sarsa_model_name)
         policies["SARSA"] = (greedy_action_fn(s_agent), False, "none")
     if show_dq and dq_model_name:
         dq_agent = load_rl_agent("double_q_learning", str(cfg.results_models / dq_model_name), dq_model_name)
+        _require_compatible_q_table(dq_agent, privileged=False, model_name=dq_model_name)
         policies["Double Q-Learning"] = (greedy_action_fn(dq_agent), False, "none")
 
     traces: dict[str, pd.DataFrame] = {}

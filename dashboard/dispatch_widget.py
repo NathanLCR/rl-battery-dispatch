@@ -12,13 +12,8 @@ def render_dispatch_widget(actions: list[str], times: list[str], soc: list[float
     _render_dispatch_html(actions, times, soc, height=320)
 
 
-def render_landing_dispatch(trace, demo_day: str = "") -> None:
-    """Q-Agent control-centre hero animation for the landing page."""
-    _render_landing_control_centre(trace, demo_day)
-
-
-def _render_landing_control_centre(trace, demo_day: str = "") -> None:
-    """Dark-themed Q-Agent hero with energy-flow animation (landing page only)."""
+def build_landing_dispatch_html(trace, demo_day: str = "") -> str:
+    """Return the landing-page Q-Agent control-centre HTML (for Streamlit iframe or web app)."""
     payload = {
         "actions": trace["action"].tolist()[:48],
         "times": trace["time_label"].tolist()[:48],
@@ -32,9 +27,22 @@ def _render_landing_control_centre(trace, demo_day: str = "") -> None:
         "day": demo_day,
     }
     data_json = json.dumps(payload)
+    # Reuse the same markup as `_render_landing_control_centre` (kept in sync below).
+    return _landing_control_centre_document(data_json)
 
-    components.html(
-        f"""
+
+def render_landing_dispatch(trace, demo_day: str = "") -> None:
+    """Q-Agent control-centre hero animation for the landing page."""
+    components.html(build_landing_dispatch_html(trace, demo_day), height=520, scrolling=False)
+
+
+def _render_landing_control_centre(trace, demo_day: str = "") -> None:
+    """Dark-themed Q-Agent hero with energy-flow animation (landing page only)."""
+    components.html(build_landing_dispatch_html(trace, demo_day), height=520, scrolling=False)
+
+
+def _landing_control_centre_document(data_json: str) -> str:
+    return f"""
 <!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
   * {{ box-sizing: border-box; }}
@@ -412,10 +420,7 @@ tick();
 setInterval(tick, 650);
 </script>
 </body></html>
-        """,
-        height=520,
-        scrolling=False,
-    )
+"""
 
 
 def _render_dispatch_html(

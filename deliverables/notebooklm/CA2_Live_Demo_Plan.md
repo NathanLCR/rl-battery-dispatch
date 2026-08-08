@@ -1,7 +1,5 @@
-# GréineQ CA2 — Live Demo Plan
+# GréineQ CA2 — 15-minute recorded run
 
-See Word document: `deliverables/presentation/GreineQ_CA2_Live_Demo_Plan.docx` (kept in sync with the presentation + User Guide).
+See Word document: `deliverables/presentation/GreineQ_CA2_Live_Demo_Plan.docx`.
 
-**Exact day:** 2012-07-14 · **Driver:** Nathan · **Narrator:** Nadeesha · **URL:** http://localhost:8501
-
-**Path:** Overview → Digital Twin → Results → Agent Play → optional Price Monitor
+**Format:** 15-min recording · no Q&A · **Day:** 2012-07-14 · **Driver:** Nathan · **Narrator:** Nadeesha · **Backup:** Bahadir · **Open/close:** Emmanuel · **URL:** http://localhost:8501

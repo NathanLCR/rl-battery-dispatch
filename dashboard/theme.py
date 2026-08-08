@@ -309,6 +309,100 @@ MISSION_CSS = """
         color: #1c1917;
     }
 
+    /* Inactive / secondary buttons — avoid white-on-white (esp. published Streamlit) */
+    .stButton > button[kind="secondary"],
+    .stButton > button[data-testid="baseButton-secondary"],
+    .stButton > button[data-testid="stBaseButton-secondary"],
+    button[data-testid="baseButton-secondary"],
+    button[data-testid="stBaseButton-secondary"] {
+        background: #1e293b !important;
+        color: #f1f5f9 !important;
+        border: 1px solid rgba(148, 163, 184, 0.45) !important;
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+        font-family: 'Barlow Condensed', sans-serif !important;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        opacity: 1 !important;
+    }
+
+    .stButton > button[kind="secondary"]:hover,
+    .stButton > button[data-testid="baseButton-secondary"]:hover,
+    .stButton > button[data-testid="stBaseButton-secondary"]:hover,
+    button[data-testid="baseButton-secondary"]:hover,
+    button[data-testid="stBaseButton-secondary"]:hover {
+        background: #334155 !important;
+        color: #ffffff !important;
+        border-color: rgba(245, 158, 11, 0.55) !important;
+    }
+
+    .stButton > button[kind="secondary"] p,
+    .stButton > button[kind="secondary"] span,
+    .stButton > button[data-testid="baseButton-secondary"] p,
+    .stButton > button[data-testid="baseButton-secondary"] span,
+    .stButton > button[data-testid="stBaseButton-secondary"] p,
+    .stButton > button[data-testid="stBaseButton-secondary"] span,
+    button[data-testid="baseButton-secondary"] p,
+    button[data-testid="baseButton-secondary"] span,
+    button[data-testid="stBaseButton-secondary"] p,
+    button[data-testid="stBaseButton-secondary"] span {
+        color: inherit !important;
+    }
+
+    /* Top nav keys — force readable labels even if Streamlit theme flips */
+    .st-key-nav_twin button,
+    .st-key-nav_live button,
+    .st-key-nav_play button,
+    .st-key-nav_results button,
+    [class*="st-key-nav_home_"] button {
+        font-family: 'Barlow Condensed', sans-serif !important;
+        letter-spacing: 0.08em !important;
+        text-transform: uppercase !important;
+        border-radius: 10px !important;
+    }
+
+    .st-key-nav_twin button[kind="secondary"],
+    .st-key-nav_live button[kind="secondary"],
+    .st-key-nav_play button[kind="secondary"],
+    .st-key-nav_results button[kind="secondary"],
+    .st-key-nav_twin button[data-testid="baseButton-secondary"],
+    .st-key-nav_live button[data-testid="baseButton-secondary"],
+    .st-key-nav_play button[data-testid="baseButton-secondary"],
+    .st-key-nav_results button[data-testid="baseButton-secondary"],
+    .st-key-nav_twin button[data-testid="stBaseButton-secondary"],
+    .st-key-nav_live button[data-testid="stBaseButton-secondary"],
+    .st-key-nav_play button[data-testid="stBaseButton-secondary"],
+    .st-key-nav_results button[data-testid="stBaseButton-secondary"],
+    [class*="st-key-nav_home_"] button {
+        background: #1e293b !important;
+        color: #f8fafc !important;
+        border: 1px solid rgba(148, 163, 184, 0.5) !important;
+    }
+
+    .st-key-nav_twin button[kind="primary"],
+    .st-key-nav_live button[kind="primary"],
+    .st-key-nav_play button[kind="primary"],
+    .st-key-nav_results button[kind="primary"],
+    .st-key-nav_twin button[data-testid="baseButton-primary"],
+    .st-key-nav_live button[data-testid="baseButton-primary"],
+    .st-key-nav_play button[data-testid="baseButton-primary"],
+    .st-key-nav_results button[data-testid="baseButton-primary"] {
+        color: #1c1917 !important;
+    }
+
+    .st-key-nav_twin button[kind="secondary"] span,
+    .st-key-nav_live button[kind="secondary"] span,
+    .st-key-nav_play button[kind="secondary"] span,
+    .st-key-nav_results button[kind="secondary"] span,
+    .st-key-nav_twin button[kind="secondary"] p,
+    .st-key-nav_live button[kind="secondary"] p,
+    .st-key-nav_play button[kind="secondary"] p,
+    .st-key-nav_results button[kind="secondary"] p,
+    [class*="st-key-nav_home_"] button span,
+    [class*="st-key-nav_home_"] button p {
+        color: #f8fafc !important;
+    }
+
     .gq-mission-topbar {
         display: flex;
         flex-wrap: wrap;

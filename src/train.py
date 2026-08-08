@@ -324,6 +324,19 @@ def greedy_action_fn(agent):
 
     def policy(env: MicrogridEnv) -> int:
         state = env._observe()
+        n_states = None
+        if hasattr(agent, "q") and hasattr(agent.q, "n_states"):
+            n_states = int(agent.q.n_states)
+        elif hasattr(agent, "q_a") and hasattr(agent.q_a, "n_states"):
+            n_states = int(agent.q_a.n_states)
+        if n_states is not None and not (0 <= int(state) < n_states):
+            raise ValueError(
+                f"State index {int(state)} is outside this model's Q-table "
+                f"(size {n_states}). The dashboard discretiser expects "
+                f"540 (current) or 1620 (privileged) states. "
+                f"Published hosts often still have old 324-state CA1 tables — "
+                f"replace results/models/ with forecast_exp seed-42/46 Q-tables and rebuild."
+            )
         if hasattr(agent, "greedy_action"):
             return agent.greedy_action(state)
         return agent.q.greedy_action(state)

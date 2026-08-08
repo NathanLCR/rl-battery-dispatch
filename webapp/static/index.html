@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GréineQ</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div class="app" id="appRoot">
+    <nav class="nav hidden" id="nav">
+      <button type="button" data-view="overview">Overview</button>
+      <button type="button" data-view="twin">Digital Twin</button>
+      <button type="button" data-view="live">Price Monitor</button>
+      <button type="button" data-view="play">Agent Play</button>
+      <button type="button" data-view="results">Results</button>
+    </nav>
+
+    <div id="error" class="error hidden"></div>
+
+    <!-- LANDING (Streamlit Overview) -->
+    <section id="view-overview">
+      <div class="gq-card">
+        <div class="gq-title-bar">
+          <div class="gq-logo-wrap">
+            <img src="/static/greineq_logo.svg" alt="GréineQ" width="280" height="auto" />
+          </div>
+          <p class="gq-tagline">Reinforcement learning for solar battery dispatch</p>
+          <div class="gq-title-divider"></div>
+        </div>
+        <div class="gq-landing-cta-row">
+          <button class="btn-enter-twin" type="button" data-goto="twin">Digital Twin →</button>
+          <button class="btn-enter-play" type="button" data-goto="play">Play vs Agent</button>
+        </div>
+      </div>
+
+      <div class="gq-hero">
+        <iframe
+          id="heroFrame"
+          title="Q-Agent day replay"
+          src="/api/overview/hero"
+          loading="eager"
+        ></iframe>
+      </div>
+
+      <div class="gq-explain">
+        <h3>What you are seeing</h3>
+        <p>GréineQ replays a historical solar-battery day in 30-minute steps. At each step the agent
+sees solar generation, household demand, battery charge level, and grid price — then chooses
+hold, charge from solar, discharge to the home, grid-charge (buy), or export (sell).
+Grid-charge and export enable price arbitrage: buy low, use or sell later.</p>
+      </div>
+      <div class="gq-action-strip">
+        <span class="gq-action-badge gq-badge-hold"><span class="gq-badge-dot" style="background:#64748b"></span>Hold</span>
+        <span class="gq-action-badge gq-badge-charge"><span class="gq-badge-dot" style="background:#22c55e"></span>Charge battery</span>
+        <span class="gq-action-badge gq-badge-discharge"><span class="gq-badge-dot" style="background:#f59e1a"></span>Discharge battery</span>
+        <span class="gq-action-badge gq-badge-grid_charge"><span class="gq-badge-dot" style="background:#0ea5e9"></span>Grid-charge (buy)</span>
+        <span class="gq-action-badge gq-badge-export"><span class="gq-badge-dot" style="background:#a855f7"></span>Export (sell)</span>
+      </div>
+    </section>
+
+    <!-- TWIN -->
+    <section id="view-twin" class="layout hidden">
+      <aside class="panel sidebar">
+        <h2>Simulation setup</h2>
+        <label for="split">Day split</label>
+        <select id="split">
+          <option value="test">Test days (held out)</option>
+          <option value="val">Validation</option>
+          <option value="train">Train</option>
+        </select>
+        <label for="day">Simulation day</label>
+        <select id="day"></select>
+
+        <h2 style="margin-top:1.2rem">Controllers</h2>
+        <label class="check"><input type="checkbox" id="showGreedy" checked /> Greedy (5-action)</label>
+        <label class="check"><input type="checkbox" id="showCurrent" checked /> Current Q</label>
+        <label class="check"><input type="checkbox" id="showPriv" checked /> Privileged Q — true 4h signal</label>
+
+        <button class="btn" id="runBtn" type="button">Run comparison</button>
+        <p class="muted" style="margin-top:0.5rem">Loads on first open. Click again after changing settings.</p>
+
+        <details class="exp-settings" id="expSettings">
+          <summary>Experiment settings</summary>
+          <label for="rewardMode">Reward function</label>
+          <select id="rewardMode">
+            <option value="battery_aware">Battery-aware (cycling + terminal SOC)</option>
+            <option value="cost_only">Cost only</option>
+          </select>
+
+          <p class="exp-section">Extra baselines</p>
+          <label class="check"><input type="checkbox" id="showSolarOnly" /> Solar-only greedy</label>
+          <label class="check"><input type="checkbox" id="showRule" /> Tertile rule baseline</label>
+
+          <p class="exp-section">Additional RL agents</p>
+          <label class="check"><input type="checkbox" id="showSarsa" /> SARSA</label>
+          <label class="check"><input type="checkbox" id="showDq" /> Double Q-Learning</label>
+
+          <label for="modelCurrent">Current Q model</label>
+          <select id="modelCurrent"></select>
+          <label for="modelPriv">Privileged Q model</label>
+          <select id="modelPriv"></select>
+          <label for="modelSarsa" class="model-sarsa hidden">SARSA model</label>
+          <select id="modelSarsa" class="model-sarsa hidden"></select>
+          <label for="modelDq" class="model-dq hidden">Double Q model</label>
+          <select id="modelDq" class="model-dq hidden"></select>
+
+          <label class="check" style="margin-top:0.65rem">
+            <input type="checkbox" id="includeQvals" /> Show Q-values in download / diagnostics
+          </label>
+        </details>
+
+        <div class="sidebar-flow" id="sidebarFlow">
+          <div class="sidebar-flow-caption muted" id="sidebarFlowCaption">System flow · run a comparison</div>
+          <div class="sidebar-pipeline" id="sidebarPipeline" aria-hidden="true">
+            <div class="sp-seg"><div class="sp-q">Q</div><span>Q-Agent</span></div>
+            <div class="sp-conn" id="spC1"></div>
+            <div class="sp-seg"><div class="sp-solar" id="spSolar"></div><span>Solar</span></div>
+            <div class="sp-conn" id="spC2"></div>
+            <div class="sp-seg">
+              <div class="sp-batt"><div class="sp-fill" id="spFill" style="height:30%"></div><span class="sp-pct" id="spPct">30%</span></div>
+              <span>Battery</span>
+            </div>
+            <div class="sp-conn" id="spC3"></div>
+            <div class="sp-seg"><div class="sp-home" id="spHome"></div><span>Home</span></div>
+          </div>
+          <div class="sidebar-flow-step muted" id="sidebarFlowStep">Step —</div>
+        </div>
+      </aside>
+      <main class="panel main">
+        <h2>Controller comparison</h2>
+        <div id="twinEmpty" class="muted">Choose controllers and click <strong>Run comparison</strong>.</div>
+        <div id="twinOut" class="hidden">
+          <div class="winner" id="winner"></div>
+          <div class="kpis" id="kpis"></div>
+          <table>
+            <thead><tr><th>Controller</th><th class="num">Net cost</th><th class="num">Savings</th><th class="num">Final SOC</th></tr></thead>
+            <tbody id="sumBody"></tbody>
+          </table>
+          <details class="details"><summary>Detailed metrics</summary>
+            <div class="tabs">
+              <button type="button" class="tab active" data-mtab="cost">Cost</button>
+              <button type="button" class="tab" data-mtab="energy">Energy</button>
+              <button type="button" class="tab" data-mtab="batt">Battery</button>
+            </div>
+            <div id="detailTables"></div>
+          </details>
+
+          <h3 class="section-h">Charts</h3>
+          <div class="tabs" id="chartTabs">
+            <button type="button" class="tab active" data-ctab="energy">Energy</button>
+            <button type="button" class="tab" data-ctab="price">Price &amp; SOC</button>
+            <button type="button" class="tab" data-ctab="actions">Controller actions</button>
+            <button type="button" class="tab" data-ctab="cost">Step cost</button>
+          </div>
+          <div id="ctab-energy" class="chart-card"><h3>Solar generation &amp; household demand</h3><canvas id="energyChart"></canvas></div>
+          <div id="ctab-price" class="chart-card hidden"><h3>Price &amp; battery SOC</h3><canvas id="socChart"></canvas></div>
+          <div id="ctab-actions" class="chart-card hidden"><h3>Controller actions over the day</h3><canvas id="actionsChart"></canvas></div>
+          <div id="ctab-cost" class="chart-card hidden"><h3>Net cost by step</h3><canvas id="costChart"></canvas></div>
+
+          <div class="step-row">
+            <button type="button" class="step-btn" id="prevStep">← Prev</button>
+            <input type="range" id="step" min="1" max="48" value="24" />
+            <button type="button" class="step-btn" id="nextStep">Next →</button>
+            <span class="badge" id="stepLabel">Step 24</span>
+          </div>
+          <table style="margin-top:0.75rem">
+            <thead><tr><th>Controller</th><th>Action</th><th class="num">SOC</th><th class="num">Step cost</th></tr></thead>
+            <tbody id="stepBody"></tbody>
+          </table>
+          <details class="details"><summary>Diagnostics &amp; download</summary>
+            <button class="btn inline secondary" type="button" id="dlTwin">Download JSON</button>
+          </details>
+          <p class="muted" id="modelNote"></p>
+        </div>
+      </main>
+    </section>
+
+    <!-- LIVE -->
+    <section id="view-live" class="hidden">
+      <div class="panel">
+        <h2>Live Price Monitor</h2>
+        <div class="live-banner">LIVE PRICE + HISTORICAL TYPICAL LOAD · Informational only — not the Digital Twin</div>
+        <div id="liveBody"></div>
+        <button class="btn inline" type="button" id="refreshLive" style="margin-top:1rem;width:auto">Refresh</button>
+      </div>
+    </section>
+
+    <!-- PLAY -->
+    <section id="view-play" class="hidden">
+      <div class="panel" id="playSetup">
+        <h2>Play vs Agent</h2>
+        <p class="muted">Operate the battery for 48 half-hour steps. Lowest adjusted electricity cost wins.</p>
+        <div class="play-setup-grid">
+          <div>
+            <label for="playDay">Test day</label>
+            <select id="playDay"></select>
+          </div>
+          <div>
+            <label for="playOpponent">Opponent</label>
+            <select id="playOpponent">
+              <option value="current">Current Q</option>
+              <option value="privileged">Privileged Q — true 4h signal</option>
+            </select>
+          </div>
+        </div>
+        <label for="playModel">Trained model</label>
+        <select id="playModel"></select>
+        <p class="muted" id="playOversight">You always see a realistic 4h forecast. Privileged opponents may use a true direction signal — oversight demo.</p>
+        <button class="btn" type="button" id="playStart" style="max-width:280px">Start game</button>
+      </div>
+      <div class="panel hidden" id="playGame"></div>
+    </section>
+
+    <!-- RESULTS -->
+    <section id="view-results" class="hidden">
+      <div class="panel">
+        <h2>Experiment Results</h2>
+        <p class="muted" id="resultsCaption"></p>
+        <div class="finding" id="resultsFinding"></div>
+        <div class="kpis" id="resultsKpis"></div>
+        <div class="results-grid">
+          <div class="chart-card"><h3>Aggregate net cost · Lower is better</h3><canvas id="resultsChart"></canvas></div>
+          <div class="learn-card" id="resultsLearn">
+            <h3>What did we learn?</h3>
+            <div id="resultsLearnBody"></div>
+          </div>
+        </div>
+        <h3 class="section-h">Results table</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Controller</th>
+              <th class="num">Net cost</th>
+              <th class="num">Savings vs no battery</th>
+              <th class="num">Gap to oracle</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody"></tbody>
+        </table>
+        <p class="muted" id="resultsStdNote"></p>
+        <details class="details" open><summary>Experiment setup</summary>
+          <ul class="muted" id="resultsSetup"></ul>
+        </details>
+        <details class="details"><summary>Methodology notes</summary>
+          <ul class="muted" id="resultsMethod"></ul>
+        </details>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

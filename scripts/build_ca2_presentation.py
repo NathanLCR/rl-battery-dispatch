@@ -43,8 +43,10 @@ SLIDE_W = PptInches(13.333)
 SLIDE_H = PptInches(7.5)
 
 TEAM = [
-    ("Nathan Lucio", "[Student No.]", "Data & MDP / Twin demo driver"),
-    ("Nadeesha Jayasuriya", "[Student No.]", "RL experiment / Results narrator"),
+    ("Nathan Rocha", "20082900", "Data & MDP / Twin demo driver"),
+    ("Nadeesha Jayasuriya", "20093736", "RL experiment / Results narrator"),
+    ("Emmanuel Addoh", "10592825", "Opening & closing (non-technical)"),
+    ("Bahadir Demir", "20098301", "Dashboard & demo support"),
 ]
 
 # Exact headline numbers (oracle-direction privileged Q)
@@ -61,7 +63,9 @@ SPEAKER_NOTES = {
         "CA1 asked whether RL could beat simple solar self-consumption. "
         "CA2 asks whether forward-looking price information helps a tabular agent time grid arbitrage — "
         "and we tested that with a deployed digital twin. "
-        "Nathan introduces the team and problem; Nadeesha owns the experiment narrative."
+        "Emmanuel opens with the team and closes takeaways (non-technical). "
+        "Nathan covers the problem/MDP and drives the Twin demo; Nadeesha owns the experiment narrative; "
+        "Bahadir supports the recorded dashboard demo (backup clicks if needed)."
     ),
     2: (
         "Frame the problem: solar self-use is easy with rules; profitable timing needs the future. "
@@ -117,16 +121,16 @@ SPEAKER_NOTES = {
         "Be precise, not generic. Limitations: three-bin direction without magnitude; experimental wholesale export; "
         "larger privileged table may under-train at 10k episodes; live feed is price-real and meter-partial. "
         "Next step targets magnitude or spread foresight — the bottleneck we identified — "
-        "and keep greedy as a safety baseline until RL beats it on held-out days."
+        "and keep greedy as a safety baseline until RL beats it on held-out days. "
+        "After this slide: switch to the dashboard for the recorded demo (~5 min), then return for Emmanuel’s slide 9 close."
     ),
     9: (
-        "Close in one line: we made arbitrage actionable, tested whether a four-hour three-bin direction feature helps tabular RL, "
-        "found it does not beat greedy under this setup, and shipped a dashboard that makes that gap visible. "
-        "Demo path: Overview → Twin → Results → Agent Play (oversight) → optional Price Monitor. Hand to Q&A."
+        "Emmanuel closes the recording in one plain line: we made arbitrage actionable, tested whether a four-hour "
+        "three-bin direction feature helps tabular RL, found it does not beat greedy under this setup, and shipped a "
+        "dashboard that makes that gap visible. Stop cleanly — this is a 15-minute recording with no Q&A."
     ),
     10: (
-        "Sources slide — do not present unless asked. Keep visible only if the panel requests provenance. "
-        "Point to User Guide Word doc and local localhost:8501 if asked how to operate the twin."
+        "Sources slide — do not include in the recording unless the brief requires provenance on screen."
     ),
 }
 
@@ -304,24 +308,27 @@ def build_pptx() -> Path:
     )
     _add_textbox(
         s,
-        PptInches(1.5),
-        PptInches(3.4),
-        PptInches(10.2),
-        PptInches(1.4),
-        "Nathan Lucio  ·  [Student No.]  ·  Data & MDP\n"
-        "Nadeesha Jayasuriya  ·  [Student No.]  ·  RL experiment & deployment\n\n"
+        PptInches(1.2),
+        PptInches(3.15),
+        PptInches(10.8),
+        PptInches(2.0),
+        "Nathan Rocha  ·  20082900  ·  Data & MDP\n"
+        "Nadeesha Jayasuriya  ·  20093736  ·  RL experiment & deployment\n"
+        "Emmanuel Addoh  ·  10592825  ·  Opening & closing\n"
+        "Bahadir Demir  ·  20098301  ·  Dashboard & demo support\n\n"
         "B9AI105 Reinforcement Learning  ·  Forecast-information experiment",
-        size=15,
+        size=14,
         color=MUTED,
         align=PP_ALIGN.CENTER,
     )
     _add_textbox(
         s,
-        PptInches(1.5),
-        PptInches(5.2),
-        PptInches(10.2),
-        PptInches(0.6),
-        "Slide ownership: Nathan 1–3, 7  |  Nadeesha 4–6, 8–9  |  Demo: Nathan drives · Nadeesha narrates",
+        PptInches(1.2),
+        PptInches(5.45),
+        PptInches(10.8),
+        PptInches(0.7),
+        "Slides: Emmanuel 1 & 9  ·  Nathan 2–3, 7  ·  Nadeesha 4–6, 8  ·  Bahadir demo backup\n"
+        "15-min recording · no Q&A  ·  Demo: Nathan drives · Nadeesha narrates · Bahadir backup",
         size=12,
         color=GOLD,
         align=PP_ALIGN.CENTER,
@@ -624,7 +631,7 @@ def build_pptx() -> Path:
         PptInches(5.2),
         PptInches(11.8),
         PptInches(0.8),
-        "Demo next → Overview · Digital Twin · Results · Agent Play (oversight) · optional Price Monitor",
+        "15-minute recording · no Q&A  ·  End after this close",
         size=14,
         color=GOLD,
     )
@@ -673,14 +680,26 @@ def build_speaker_notes_docx() -> Path:
     h.alignment = WD_ALIGN_PARAGRAPH.LEFT
     p = doc.add_paragraph()
     p.add_run("Synced with PowerPoint Presenter View notes (same wording). ").bold = True
-    p.add_run("Brand spelling: GréineQ. Fill in student numbers before submission.")
+    p.add_run(
+        "Brand spelling: GréineQ. Format: 15-minute recorded presentation — no technical Q&A. "
+        "Team roster and student numbers are on the title slide."
+    )
 
     doc.add_heading("Team & slide allocation", level=1)
     for name, sid, role in TEAM:
         doc.add_paragraph(f"{name} — {sid} — {role}", style="List Bullet")
-    doc.add_paragraph("Spoken ownership: Nathan slides 1–3 and 7; Nadeesha slides 4–6 and 8–9. Both answer any Q&A topic.")
     doc.add_paragraph(
-        "Live demo: Nathan = driver (mouse only); Nadeesha = narrator; backup operator = the other person if primary fails."
+        "Spoken ownership: Emmanuel Addoh — slides 1 (title/team) and 9 (closing takeaways), non-technical. "
+        "Nathan Rocha — slides 2–3 and 7. Nadeesha Jayasuriya — slides 4–6 and 8. "
+        "Bahadir Demir — recorded demo backup (clicks if Nathan needs a hand)."
+    )
+    doc.add_paragraph(
+        "Recorded run order: slides 1–8 (~8 min) → dashboard demo (~5–5.5 min) → slide 9 close (~1–1.5 min). "
+        "Total 15 minutes. Do not leave time for Q&A. Skip sources slide in the recording."
+    )
+    doc.add_paragraph(
+        "Demo on recording: Nathan Rocha = driver; Nadeesha Jayasuriya = narrator / clock; "
+        "Bahadir Demir = backup. Emmanuel Addoh speaks only open and close — no demo mouse."
     )
 
     titles = {
@@ -717,20 +736,27 @@ def build_speaker_notes_docx() -> Path:
 def build_demo_plan_docx() -> Path:
     doc = Document()
     _docx_styles(doc)
-    doc.add_heading("GréineQ CA2 — Live Demo Plan", level=0)
+    doc.add_heading("GréineQ CA2 — 15-minute recorded run", level=0)
     doc.add_paragraph(
-        "Confirm the permitted slot with the panel. Slides (~5–7 min) plus this demo (~6–8 min) "
-        "are about 11–15 minutes before Q&A — cut Agent Play if the slot is shorter. "
+        "Format: one continuous 15-minute recording. No live panel. No technical Q&A. "
         "Operator detail: deliverables/GreineQ_User_Guide.docx."
+    )
+    doc.add_paragraph(
+        "Order: slides 1–8 (~8 min) → dashboard demo (~5–5.5 min) → slide 9 close (~1–1.5 min). "
+        "Skip slide 10 (sources). Cut Agent Play / Price Monitor first if over time."
     )
 
     doc.add_heading("Roles (named)", level=1)
-    doc.add_paragraph("Driver: Nathan Lucio — clicks only; no improvisation.", style="List Bullet")
-    doc.add_paragraph("Narrator: Nadeesha Jayasuriya — speaks over demo; owns clock.", style="List Bullet")
-    doc.add_paragraph("Backup operator: swap roles if primary fails; both know the happy path.", style="List Bullet")
+    doc.add_paragraph(
+        "Opening & closing (slides 1 and 9): Emmanuel Addoh (10592825) — non-technical; no demo mouse.",
+        style="List Bullet",
+    )
+    doc.add_paragraph("Driver: Nathan Rocha (20082900) — clicks only; no improvisation.", style="List Bullet")
+    doc.add_paragraph("Narrator / clock: Nadeesha Jayasuriya (20093736) — speaks over demo.", style="List Bullet")
+    doc.add_paragraph("Backup clicks: Bahadir Demir (20098301) — if Nathan needs a hand mid-recording.", style="List Bullet")
 
     doc.add_heading("Frozen demo configuration", level=1)
-    doc.add_paragraph("URL: http://localhost:8501 (local ca2_agent). Do not rely on production.", style="List Bullet")
+    doc.add_paragraph("URL: http://localhost:8501 (local). Do not rely on production for the recording.", style="List Bullet")
     doc.add_paragraph(
         "Top nav: Digital Twin · Price Monitor · Agent Play · Results · Overview",
         style="List Bullet",
@@ -745,102 +771,101 @@ def build_demo_plan_docx() -> Path:
         "Exact demo models (forecast_exp, seed 42): "
         "Q_q_learning_20260807_180535_forecast_exp_current_seed42.npy · "
         "Q_q_learning_20260807_180659_forecast_exp_privileged_seed42.npy "
-        "(results/models/). Do not retrain mid-demo.",
+        "(results/models/). Do not retrain mid-recording.",
         style="List Bullet",
     )
     doc.add_paragraph(
-        "Browser: full screen, zoom 100% (test 90–100%); after Twin loads, collapse sidebar for projection.",
+        "Browser: full screen, zoom 100%; after Twin loads, collapse sidebar for a clean capture.",
         style="List Bullet",
     )
 
-    doc.add_heading("Pre-flight (T−15)", level=1)
+    doc.add_heading("Pre-flight (before record)", level=1)
     for item in [
         "python scripts/system_test.py",
         "Start dashboard: .\\run_dashboard.ps1 or streamlit run dashboard/app.py",
-        "Verify models exist (forecast_exp current + privileged) — if missing, restore verified backups / screenshots; do NOT quick-retrain",
-        "Skim User Guide: deliverables/GreineQ_User_Guide.docx",
-        "Have offline screenshots: Twin winner+table, Results cost chart, optional short screen recording",
-        "Mute notifications; close chat apps",
+        "Verify forecast_exp current + privileged models — screenshots ready as fallback",
+        "Mute notifications; close chat apps; test mic levels for all speakers",
+        "Open PPTX on slides; keep localhost:8501 ready on a second window/desktop",
+        "Do a 60-second dry run of Twin Run comparison so the first open is warm",
     ]:
         doc.add_paragraph(item, style="List Bullet")
 
-    doc.add_heading("Timing (aligned with User Guide demo path)", level=1)
+    doc.add_heading("Full 15-minute timing", level=1)
     rows = [
-        ("0:00–0:45", "Overview & hook", "Overview"),
-        ("0:45–4:00", "Digital Twin fair comparison", "Digital Twin"),
-        ("4:00–6:00", "Experiment Results headline", "Results"),
-        ("6:00–8:00", "Agent Play (oversight) — optional cut", "Agent Play"),
-        ("8:00–8:20", "Optional: Price Monitor disclosure", "Price Monitor"),
-        ("8:20–8:30", "Close + invite Q&A", "—"),
+        ("0:00–0:45", "Title & team intro", "Emmanuel · Slide 1"),
+        ("0:45–2:00", "Problem & CA2 question", "Nathan · Slide 2"),
+        ("2:00–3:15", "MDP — agent, env, learning", "Nathan · Slide 3"),
+        ("3:15–4:30", "Experiment design", "Nadeesha · Slide 4"),
+        ("4:30–5:45", "Aggregate results", "Nadeesha · Slide 5"),
+        ("5:45–6:45", "Theory vs deployed", "Nadeesha · Slide 6"),
+        ("6:45–7:45", "Working deployment & ethics", "Nathan · Slide 7"),
+        ("7:45–8:30", "Limitations & next steps → switch to app", "Nadeesha · Slide 8"),
+        ("8:30–11:30", "Digital Twin fair comparison", "Nathan / Nadeesha · Twin"),
+        ("11:30–12:45", "Experiment Results headline", "Nadeesha · Results"),
+        ("12:45–13:45", "Agent Play (1–2 clicks) — cut if late", "Nathan / Nadeesha · Play"),
+        ("13:45–15:00", "Closing takeaways — stop recording", "Emmanuel · Slide 9"),
     ]
     table = doc.add_table(rows=1 + len(rows), cols=3)
     hdr = table.rows[0].cells
-    hdr[0].text, hdr[1].text, hdr[2].text = "Time", "Segment", "View"
+    hdr[0].text, hdr[1].text, hdr[2].text = "Time", "Segment", "Owner / view"
     for i, (a, b, c) in enumerate(rows, 1):
         table.rows[i].cells[0].text = a
         table.rows[i].cells[1].text = b
         table.rows[i].cells[2].text = c
 
-    doc.add_heading("Script", level=1)
+    doc.add_heading("Demo script (8:30–13:45)", level=1)
 
-    doc.add_heading("Overview (0:00–0:45)", level=2)
-    doc.add_paragraph(
-        "Show brand, tagline, CTAs, day-replay animation. "
-        "Disclose: the landing animation is a heuristic preview, not the trained Q-Learning agent."
-    )
-
-    doc.add_heading("Digital Twin (0:45–4:00)", level=2)
+    doc.add_heading("Digital Twin (8:30–11:30)", level=2)
     doc.add_paragraph(
         "Open Digital Twin. Day split = Test; day = 2012-07-14. "
-        "Ensure Greedy (5-action) + Current Q + Privileged Q — true 4h signal are checked. "
-        "First open auto-runs once; if settings changed, click Run comparison. "
-        "Point to winner strip, four KPIs, comparison table, charts, and one step on the timestep inspector. "
+        "Ensure Greedy + Current Q + Privileged Q — true 4h signal. "
+        "Run comparison if needed. Point to winner strip, KPIs, table, one chart, one inspector step. "
         "Narrator: same day, same tariff; greedy usually wins; true four-hour direction alone does not close the gap. "
-        "Do not open Price Monitor on this page — that is a separate view. "
-        "Collapse sidebar after results load for a cleaner projected view."
+        "Skip Price Monitor unless you are ahead of time."
     )
 
-    doc.add_heading("Experiment Results (4:00–6:00)", level=2)
+    doc.add_heading("Experiment Results (11:30–12:45)", level=2)
     doc.add_paragraph(
-        "Show curated headline chart and table: No-battery reference 160.75 · Perfect foresight bound 74.92 · "
-        "Greedy 90.39 · Current Q ~124 · Privileged true-direction ~140. "
-        "Say the hypothesis was not supported under this experimental setup. "
-        "Optional: expand Experiment setup once; do not dwell on per-seed CSV."
+        "Headline: No-battery 160.75 · Perfect foresight 74.92 · Greedy 90.39 · Current Q ~124 · Privileged ~140. "
+        "Say the hypothesis was not supported under this experimental setup."
     )
 
-    doc.add_heading("Agent Play (6:00–8:00)", level=2)
+    doc.add_heading("Agent Play (12:45–13:45) — first cut if over time", level=2)
     doc.add_paragraph(
-        "Open Agent Play. Game setup: pick test day, opponent Current Q (prefer for equal-ish story) or Privileged Q, "
-        "pick frozen seed-42 model, Start game. "
-        "Describe as an interactive oversight demonstration, not a scientifically fair competition: "
-        "the human always sees a realistic 4h forecast; Privileged Q may use true direction. "
-        "Show state cards → action buttons 1–5 → scoreboard. Click one or two actions only. Do not play all 48 steps."
+        "Setup → Current Q opponent → Start. Oversight framing: human sees realistic forecast. "
+        "One or two actions only. Do not play all 48 steps."
     )
 
-    doc.add_heading("Price Monitor (optional, ~20s)", level=2)
+    doc.add_heading("Closing (13:45–15:00)", level=2)
     doc.add_paragraph(
-        "If time: open Price Monitor. Say clearly — live wholesale from AEMO; PV/load are historical typicals, "
-        "not a live household meter. This is informational and separate from historical Twin."
+        "Return to slide 9. Emmanuel delivers the one-line takeaway and stops. No Q&A invitation."
     )
 
-    doc.add_heading("Failure modes", level=1)
+    doc.add_heading("If running long — cut order", level=1)
+    for item in [
+        "Drop Price Monitor entirely",
+        "Drop Agent Play",
+        "Shorten Twin to winner strip + one table glance only",
+        "Keep Results numbers + Emmanuel close",
+    ]:
+        doc.add_paragraph(item, style="List Number")
+
+    doc.add_heading("Failure modes (during recording)", level=1)
     for a, b in [
-        ("App crash / duplicate key", "Hard refresh; restart streamlit; fall back to screenshots/recording"),
-        ("Missing models", "Use verified backups + screenshots — never quick-retrain for the live mark"),
-        ("Twin blank / stale", "Click Run comparison once; or switch to screenshots"),
-        ("Live AEMO down", "Expected; disclose fallback to historical Twin — skip Price Monitor"),
+        ("App crash / duplicate key", "Hard refresh or screenshots; keep talking"),
+        ("Missing models", "Screenshots only — never retrain mid-recording"),
+        ("Twin blank / stale", "Click Run comparison once; or screenshots"),
         ("Wrong tariff narrative", "These AUD are wholesale-export experiment totals"),
     ]:
         doc.add_paragraph(f"{a}: {b}", style="List Bullet")
 
     doc.add_heading("Happy-path checklist", level=1)
     for item in [
-        "Overview → disclose heuristic preview",
-        "Digital Twin day 2012-07-14 · three controllers · Run comparison · winner strip visible",
-        "Results page · point at 90.39 vs ~124 vs ~140",
-        "Agent Play (if time) · setup → Start · one action · oversight framing",
-        "Optional Price Monitor · live vs typical load disclosure",
-        "Close with theory-vs-deployed sentence · stop for Q&A",
+        "Slides 1–8 on time (~8:30)",
+        "Twin 2012-07-14 · three controllers · winner visible",
+        "Results · 90.39 vs ~124 vs ~140 · hypothesis not supported",
+        "Play only if ahead · one action · oversight line",
+        "Slide 9 · Emmanuel close · stop recording at 15:00",
     ]:
         doc.add_paragraph(item, style="List Number")
 
@@ -850,7 +875,6 @@ def build_demo_plan_docx() -> Path:
 
 
 def update_markdown_mirrors():
-    # Keep notebooklm mirrors in sync (short pointers)
     slides_md = ROOT / "deliverables" / "notebooklm" / "CA2_Presentation_Slides.md"
     demo_md = ROOT / "deliverables" / "notebooklm" / "CA2_Live_Demo_Plan.md"
     slides_md.write_text(
@@ -860,19 +884,18 @@ def update_markdown_mirrors():
         "- `deliverables/presentation/GreineQ_CA2_Speaker_Notes.docx`\n"
         "- `deliverables/presentation/GreineQ_CA2_Live_Demo_Plan.docx`\n"
         "- Operator guide: `deliverables/GreineQ_User_Guide.docx`\n\n"
-        "Aligned with current dashboard nav (Digital Twin · Price Monitor · Agent Play · Results · Overview), "
-        "Twin Run-comparison UX, Agent Play oversight framing, and User Guide demo path. "
-        "Earlier review fixes retained: true vs realistic foresight; three-bin; reward; benchmarks; RL concepts; "
-        "teamwork; ethics; synced notes; bar chart; sources backup.\n",
+        "**Format:** 15-minute recorded presentation — **no technical Q&A**.\n\n"
+        "Order: slides 1–8 → dashboard demo → Emmanuel slide 9 close. Skip sources in the recording.\n"
+        "Team: Emmanuel open/close · Nathan technical + demo drive · Nadeesha experiment + narrate · "
+        "Bahadir demo backup.\n",
         encoding="utf-8",
     )
     demo_md.write_text(
-        "# GréineQ CA2 — Live Demo Plan\n\n"
-        "See Word document: `deliverables/presentation/GreineQ_CA2_Live_Demo_Plan.docx` "
-        "(kept in sync with the presentation + User Guide).\n\n"
-        "**Exact day:** 2012-07-14 · **Driver:** Nathan · **Narrator:** Nadeesha · "
-        "**URL:** http://localhost:8501\n\n"
-        "**Path:** Overview → Digital Twin → Results → Agent Play → optional Price Monitor\n",
+        "# GréineQ CA2 — 15-minute recorded run\n\n"
+        "See Word document: `deliverables/presentation/GreineQ_CA2_Live_Demo_Plan.docx`.\n\n"
+        "**Format:** 15-min recording · no Q&A · **Day:** 2012-07-14 · "
+        "**Driver:** Nathan · **Narrator:** Nadeesha · **Backup:** Bahadir · "
+        "**Open/close:** Emmanuel · **URL:** http://localhost:8501\n",
         encoding="utf-8",
     )
 
