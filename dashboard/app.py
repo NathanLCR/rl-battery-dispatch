@@ -1155,40 +1155,39 @@ def _render_app() -> None:
     _render_top_nav("twin")
 
     if needs_run:
-        status = st.empty()
-        with status.container():
-            _show_results_loader("Loading comparison results…")
-            try:
-                with st.spinner("Running controllers on the selected day…"):
-                    result = _simulate_episode(
-                        cfg,
-                        df,
-                        thresholds,
-                        day=str(day),
-                        reward_mode=reward_mode,
-                        show_greedy=show_greedy,
-                        show_rule=show_rule,
-                        show_arbitrage=show_arbitrage,
-                        show_q=show_q,
-                        show_q_privileged=show_q_privileged,
-                        show_sarsa=show_sarsa,
-                        show_dq=show_dq,
-                        q_model_name=q_model_name,
-                        q_priv_model_name=q_priv_model_name,
-                        sarsa_model_name=sarsa_model_name,
-                        dq_model_name=dq_model_name,
-                    )
-            except Exception as exc:  # noqa: BLE001
-                st.session_state.pop("twin_run", None)
-                st.session_state.pop("twin_run_key", None)
-                status.empty()
-                st.error(f"Comparison failed: {exc}")
-                st.caption("Fix the issue above, then click **Run comparison** again.")
-                return
+        # Avoid st.empty()+container()+empty() — that triggers Streamlit's
+        # frontend "'setIn' cannot be called on an ElementNode" error.
+        _show_results_loader("Loading comparison results…")
+        try:
+            with st.spinner("Running controllers on the selected day…"):
+                result = _simulate_episode(
+                    cfg,
+                    df,
+                    thresholds,
+                    day=str(day),
+                    reward_mode=reward_mode,
+                    show_greedy=show_greedy,
+                    show_rule=show_rule,
+                    show_arbitrage=show_arbitrage,
+                    show_q=show_q,
+                    show_q_privileged=show_q_privileged,
+                    show_sarsa=show_sarsa,
+                    show_dq=show_dq,
+                    q_model_name=q_model_name,
+                    q_priv_model_name=q_priv_model_name,
+                    sarsa_model_name=sarsa_model_name,
+                    dq_model_name=dq_model_name,
+                )
+        except Exception as exc:  # noqa: BLE001
+            st.session_state.pop("twin_run", None)
+            st.session_state.pop("twin_run_key", None)
+            st.error(f"Comparison failed: {exc}")
+            st.caption("Fix the issue above, then click **Run comparison** again.")
+            return
         st.session_state.twin_run = result
         st.session_state.twin_run_key = run_key
         settings_dirty = False
-        status.empty()
+        st.rerun()
 
     if "twin_run" not in st.session_state:
         st.info("Select controllers in the sidebar, then click **Run comparison**.")
