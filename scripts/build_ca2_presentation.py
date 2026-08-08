@@ -2,6 +2,8 @@
 
 Applies review fixes: true vs realistic foresight, three-bin wording, reward,
 benchmark labels, RL concepts, teamwork, ethics breadth, synced notes.
+Also aligned with current dashboard nav + User Guide (Twin / Price Monitor /
+Agent Play / Results / Overview).
 """
 
 from __future__ import annotations
@@ -99,14 +101,17 @@ SPEAKER_NOTES = {
         "profitable foresight is mostly charge cheap then discharge to load."
     ),
     7: (
-        "The dashboard is the working-deployment mark: Digital Twin, Play vs Agent, curated results, and a live AEMO panel. "
+        "The dashboard is the working-deployment mark. Top nav: Digital Twin, Price Monitor, Agent Play, Results, Overview. "
+        "Twin auto-runs once, then use Run comparison after settings change; winner strip, charts, and timestep inspector. "
+        "Price Monitor is live AEMO NSW1 with typical PV/load — separate from historical Twin. "
         "Ethics is broader than bill harm: transparency of experimental tariff and partial live inputs; "
         "privacy and consent for future smart-meter data; fairness of access to batteries and tariffs; "
         "generalisability limited to one Ausgrid household and NSW1; "
         "safety via SOC and power limits, manual override, and greedy as fallback; "
         "and honesty that this is a software twin, not a physical battery. "
-        "Play vs Agent is an interactive oversight demonstration — not a scientifically fair competition — "
-        "because the human and privileged agent do not necessarily receive identical foresight."
+        "Agent Play is an interactive oversight demonstration — not a scientifically fair competition — "
+        "because the human always sees a realistic forecast while Privileged Q may use true four-hour direction. "
+        "Operator steps are in deliverables/GreineQ_User_Guide.docx."
     ),
     8: (
         "Be precise, not generic. Limitations: three-bin direction without magnitude; experimental wholesale export; "
@@ -117,10 +122,11 @@ SPEAKER_NOTES = {
     9: (
         "Close in one line: we made arbitrage actionable, tested whether a four-hour three-bin direction feature helps tabular RL, "
         "found it does not beat greedy under this setup, and shipped a dashboard that makes that gap visible. "
-        "Hand to Q&A."
+        "Demo path: Overview → Twin → Results → Agent Play (oversight) → optional Price Monitor. Hand to Q&A."
     ),
     10: (
-        "Sources slide — do not present unless asked. Keep visible only if the panel requests provenance."
+        "Sources slide — do not present unless asked. Keep visible only if the panel requests provenance. "
+        "Point to User Guide Word doc and local localhost:8501 if asked how to operate the twin."
     ),
 }
 
@@ -213,7 +219,7 @@ def _notes(slide, text):
 
 
 def make_dashboard_mock(path: Path) -> None:
-    """Stylised Digital Twin panel for Slide 7 (no live screenshot required)."""
+    """Stylised Digital Twin panel for Slide 7 (matches current Twin UX)."""
     fig, ax = plt.subplots(figsize=(7.2, 4.4), facecolor="#0c1424")
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 6)
@@ -222,23 +228,29 @@ def make_dashboard_mock(path: Path) -> None:
 
     # Outer panel
     ax.add_patch(plt.Rectangle((0.2, 0.3), 9.6, 5.4, fill=True, facecolor="#121a2b", linewidth=0, zorder=0))
-    ax.text(0.45, 5.3, "Digital Twin  ·  2012-07-14", color="#f59e1a", fontsize=12, fontweight="bold", va="center")
-    ax.text(0.45, 4.85, "Same day · same tariff · three controllers", color="#94a3b8", fontsize=8, va="center")
+    # Mini top nav
+    for i, label in enumerate(["Twin", "Price", "Play", "Results"]):
+        x = 0.45 + i * 1.55
+        ax.add_patch(plt.Rectangle((x, 5.15), 1.4, 0.38, fill=True, facecolor="#1e293b", linewidth=0))
+        ax.text(x + 0.7, 5.34, label, color="#f8fafc" if i == 0 else "#94a3b8", fontsize=7, ha="center", va="center")
 
-    # Winner chip
-    ax.add_patch(plt.Rectangle((7.2, 4.95), 2.3, 0.55, fill=True, facecolor="#14532d", linewidth=0))
-    ax.text(8.35, 5.22, "Winner: Greedy", color="#86efac", fontsize=9, ha="center", va="center", fontweight="bold")
+    ax.text(0.45, 4.75, "Digital Twin  ·  2012-07-14  ·  Historical replay", color="#f59e1a", fontsize=10, fontweight="bold", va="center")
+    ax.text(0.45, 4.4, "Same day · same tariff · Greedy · Current Q · Privileged Q", color="#94a3b8", fontsize=7.5, va="center")
 
-    # Mini cost bars
+    # Winner strip
+    ax.add_patch(plt.Rectangle((0.45, 3.85), 9.1, 0.42, fill=True, facecolor="#14532d", linewidth=0))
+    ax.text(5.0, 4.06, "Winning agent  ·  Greedy   Saved vs no-battery", color="#86efac", fontsize=8, ha="center", va="center", fontweight="bold")
+
+    # Mini cost bars (day-level illustration)
     names = ["Greedy", "Current Q", "Privileged"]
     vals = [90.4, 124.2, 139.7]
     colors = ["#22c55e", "#38bdf8", "#f59e1a"]
     for i, (n, v, c) in enumerate(zip(names, vals, colors)):
-        y = 3.7 - i * 0.85
-        ax.add_patch(plt.Rectangle((0.5, y), 0.15 + v / 40, 0.55, fill=True, facecolor=c, alpha=0.85, linewidth=0))
-        ax.text(0.55, y + 0.28, f"{n}   {v:.1f} AUD", color="#f8fafc", fontsize=9, va="center")
+        y = 3.15 - i * 0.7
+        ax.add_patch(plt.Rectangle((0.5, y), 0.15 + v / 40, 0.48, fill=True, facecolor=c, alpha=0.85, linewidth=0))
+        ax.text(0.55, y + 0.24, f"{n}   {v:.1f} AUD", color="#f8fafc", fontsize=8.5, va="center")
 
-    ax.text(0.45, 0.7, "Collapse sidebar after Run · zoom 100%", color="#64748b", fontsize=8)
+    ax.text(0.45, 0.55, "Run comparison after settings change  ·  timestep inspector  ·  zoom 100%", color="#64748b", fontsize=7.5)
     fig.tight_layout(pad=0.2)
     fig.savefig(path, dpi=160, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close(fig)
@@ -523,8 +535,10 @@ def build_pptx() -> Path:
         PptInches(5.35),
         PptInches(6.1),
         PptInches(1.2),
-        "Twin · Play (oversight) · Results · Live AEMO\nLanding animation = heuristic preview, not trained Q",
-        size=11,
+        "Nav: Twin · Price Monitor · Agent Play · Results · Overview\n"
+        "Price Monitor ≠ Twin  ·  Landing animation = heuristic, not trained Q\n"
+        "User Guide: deliverables/GreineQ_User_Guide.docx",
+        size=10,
         color=MUTED,
     )
     _add_textbox(s, PptInches(6.85), PptInches(1.05), PptInches(6.0), PptInches(0.35), "Ethics (broader than bill harm)", size=15, bold=True, color=GOLD)
@@ -541,7 +555,7 @@ def build_pptx() -> Path:
             "Generalisability: one Ausgrid household, one NSW region",
             "Safety: SOC/power limits, manual override, greedy fallback",
             "Hardware: software twin — not a physical battery deployment",
-            "Play mode = oversight demo, not a scientifically fair contest",
+            "Agent Play = oversight demo (realistic forecast vs true-direction privileged)",
         ],
         size=12,
     )
@@ -600,7 +614,7 @@ def build_pptx() -> Path:
             "CA2 made price actionable (5 actions) and then tested information, not only algorithms",
             "Under this wholesale-export setup, greedy remains the best evaluated deployable controller",
             "True four-hour three-bin direction did not beat greedy — hypothesis not supported here",
-            "Digital Twin + Play vs Agent make the theory–deployed gap visible and challengeable",
+            "Digital Twin + Agent Play make the theory–deployed gap visible and challengeable",
         ],
         size=16,
     )
@@ -610,8 +624,8 @@ def build_pptx() -> Path:
         PptInches(5.2),
         PptInches(11.8),
         PptInches(0.8),
-        "Demo next → Digital Twin comparison · Experiment Results · Play vs Agent (oversight)",
-        size=15,
+        "Demo next → Overview · Digital Twin · Results · Agent Play (oversight) · optional Price Monitor",
+        size=14,
         color=GOLD,
     )
     _footer(s, 9)
@@ -632,10 +646,11 @@ def build_pptx() -> Path:
             "AEMO NSW1 regional reference price (RRP)",
             "Experiment outputs: results/logs/forecast_exp_*.csv · results/models/Q_q_learning_*_forecast_exp_*.npy",
             "Findings: deliverables/notebooklm/CA2_Forecast_Info_Experiment_Findings.md",
-            "Local dashboard: http://localhost:8501  (prefer over production mirror)",
+            "User Guide: deliverables/GreineQ_User_Guide.docx (also .md) — Twin / Play / Results / Price Monitor",
+            "Local dashboard: http://localhost:8501  (prefer over production mirror greineq-agent.sudocod.com)",
             "Repo branch: ca2_agent",
         ],
-        size=14,
+        size=13,
     )
     _footer(s, 10)
     _notes(s, SPEAKER_NOTES[10])
@@ -690,6 +705,8 @@ def build_speaker_notes_docx() -> Path:
     doc.add_paragraph("Say: realistic forecast mode exists in deployment but is not the headline source.", style="List Bullet")
     doc.add_paragraph("Say: hypothesis was not supported under this experimental setup.", style="List Bullet")
     doc.add_paragraph("Say: tabular keeps values inspectable — not “exact forever”.", style="List Bullet")
+    doc.add_paragraph("Say: Agent Play is an oversight demo — realistic forecast for the human.", style="List Bullet")
+    doc.add_paragraph("Say: Price Monitor is live wholesale + typical PV/load — not historical Twin.", style="List Bullet")
     doc.add_paragraph("Avoid mixing wholesale-export AUD with older fixed-FiT CA2 runs.", style="List Bullet")
 
     path = OUT / "GreineQ_CA2_Speaker_Notes.docx"
@@ -703,7 +720,8 @@ def build_demo_plan_docx() -> Path:
     doc.add_heading("GréineQ CA2 — Live Demo Plan", level=0)
     doc.add_paragraph(
         "Confirm the permitted slot with the panel. Slides (~5–7 min) plus this demo (~6–8 min) "
-        "are about 11–15 minutes before Q&A — cut Play if the slot is shorter."
+        "are about 11–15 minutes before Q&A — cut Agent Play if the slot is shorter. "
+        "Operator detail: deliverables/GreineQ_User_Guide.docx."
     )
 
     doc.add_heading("Roles (named)", level=1)
@@ -713,10 +731,14 @@ def build_demo_plan_docx() -> Path:
 
     doc.add_heading("Frozen demo configuration", level=1)
     doc.add_paragraph("URL: http://localhost:8501 (local ca2_agent). Do not rely on production.", style="List Bullet")
+    doc.add_paragraph(
+        "Top nav: Digital Twin · Price Monitor · Agent Play · Results · Overview",
+        style="List Bullet",
+    )
     doc.add_paragraph("Day split: Test days (held out).", style="List Bullet")
     doc.add_paragraph("Exact test day: 2012-07-14.", style="List Bullet")
     doc.add_paragraph(
-        "Controllers: Greedy (5-action), Current Q, Privileged Q (4h).",
+        "Controllers: Greedy (5-action), Current Q, Privileged Q — true 4h signal.",
         style="List Bullet",
     )
     doc.add_paragraph(
@@ -726,25 +748,30 @@ def build_demo_plan_docx() -> Path:
         "(results/models/). Do not retrain mid-demo.",
         style="List Bullet",
     )
-    doc.add_paragraph("Browser: full screen, zoom 100% (test 90–100%); collapse sidebar after Run comparison.", style="List Bullet")
+    doc.add_paragraph(
+        "Browser: full screen, zoom 100% (test 90–100%); after Twin loads, collapse sidebar for projection.",
+        style="List Bullet",
+    )
 
     doc.add_heading("Pre-flight (T−15)", level=1)
     for item in [
         "python scripts/system_test.py",
         "Start dashboard: .\\run_dashboard.ps1 or streamlit run dashboard/app.py",
         "Verify models exist (forecast_exp current + privileged) — if missing, restore verified backups / screenshots; do NOT quick-retrain",
-        "Have offline screenshots: Twin winner+table, Results cost table, optional short screen recording",
+        "Skim User Guide: deliverables/GreineQ_User_Guide.docx",
+        "Have offline screenshots: Twin winner+table, Results cost chart, optional short screen recording",
         "Mute notifications; close chat apps",
     ]:
         doc.add_paragraph(item, style="List Bullet")
 
-    doc.add_heading("Timing (aligned)", level=1)
+    doc.add_heading("Timing (aligned with User Guide demo path)", level=1)
     rows = [
-        ("0:00–0:45", "Landing & hook", "Home"),
-        ("0:45–4:00", "Digital Twin fair comparison", "Twin"),
+        ("0:00–0:45", "Overview & hook", "Overview"),
+        ("0:45–4:00", "Digital Twin fair comparison", "Digital Twin"),
         ("4:00–6:00", "Experiment Results headline", "Results"),
-        ("6:00–8:00", "Play vs Agent (oversight) — optional cut", "Play"),
-        ("8:00–8:30", "Close + invite Q&A", "—"),
+        ("6:00–8:00", "Agent Play (oversight) — optional cut", "Agent Play"),
+        ("8:00–8:20", "Optional: Price Monitor disclosure", "Price Monitor"),
+        ("8:20–8:30", "Close + invite Q&A", "—"),
     ]
     table = doc.add_table(rows=1 + len(rows), cols=3)
     hdr = table.rows[0].cells
@@ -756,50 +783,63 @@ def build_demo_plan_docx() -> Path:
 
     doc.add_heading("Script", level=1)
 
-    doc.add_heading("Landing (0:00–0:45)", level=2)
+    doc.add_heading("Overview (0:00–0:45)", level=2)
     doc.add_paragraph(
-        "Show logo, tagline, CTAs, day-replay animation. "
+        "Show brand, tagline, CTAs, day-replay animation. "
         "Disclose: the landing animation is a heuristic preview, not the trained Q-Learning agent."
     )
 
     doc.add_heading("Digital Twin (0:45–4:00)", level=2)
     doc.add_paragraph(
-        "Select day 2012-07-14 if not already selected. Ensure Greedy + Current Q + Privileged Q. "
-        "Run comparison if needed. Point to winner line, KPIs, table, energy-flow chart. "
+        "Open Digital Twin. Day split = Test; day = 2012-07-14. "
+        "Ensure Greedy (5-action) + Current Q + Privileged Q — true 4h signal are checked. "
+        "First open auto-runs once; if settings changed, click Run comparison. "
+        "Point to winner strip, four KPIs, comparison table, charts, and one step on the timestep inspector. "
         "Narrator: same day, same tariff; greedy usually wins; true four-hour direction alone does not close the gap. "
+        "Do not open Price Monitor on this page — that is a separate view. "
         "Collapse sidebar after results load for a cleaner projected view."
     )
 
     doc.add_heading("Experiment Results (4:00–6:00)", level=2)
     doc.add_paragraph(
-        "Show curated headline: No-battery reference 160.75 · Perfect-info bound 74.92 · "
+        "Show curated headline chart and table: No-battery reference 160.75 · Perfect foresight bound 74.92 · "
         "Greedy 90.39 · Current Q ~124 · Privileged true-direction ~140. "
-        "Say the hypothesis was not supported under this experimental setup."
+        "Say the hypothesis was not supported under this experimental setup. "
+        "Optional: expand Experiment setup once; do not dwell on per-seed CSV."
     )
 
-    doc.add_heading("Play vs Agent (6:00–8:00)", level=2)
+    doc.add_heading("Agent Play (6:00–8:00)", level=2)
     doc.add_paragraph(
+        "Open Agent Play. Game setup: pick test day, opponent Current Q (prefer for equal-ish story) or Privileged Q, "
+        "pick frozen seed-42 model, Start game. "
         "Describe as an interactive oversight demonstration, not a scientifically fair competition: "
-        "the human sees a realistic 4h forecast while privileged training/eval for headline results used true direction. "
-        "Show title → description → action buttons. Click one or two actions only. Do not play all 48 steps."
+        "the human always sees a realistic 4h forecast; Privileged Q may use true direction. "
+        "Show state cards → action buttons 1–5 → scoreboard. Click one or two actions only. Do not play all 48 steps."
+    )
+
+    doc.add_heading("Price Monitor (optional, ~20s)", level=2)
+    doc.add_paragraph(
+        "If time: open Price Monitor. Say clearly — live wholesale from AEMO; PV/load are historical typicals, "
+        "not a live household meter. This is informational and separate from historical Twin."
     )
 
     doc.add_heading("Failure modes", level=1)
     for a, b in [
         ("App crash / duplicate key", "Hard refresh; restart streamlit; fall back to screenshots/recording"),
         ("Missing models", "Use verified backups + screenshots — never quick-retrain for the live mark"),
-        ("Twin stuck", "Run comparison once; or switch to screenshots"),
-        ("Live AEMO down", "Expected; disclose fallback to historical replay"),
+        ("Twin blank / stale", "Click Run comparison once; or switch to screenshots"),
+        ("Live AEMO down", "Expected; disclose fallback to historical Twin — skip Price Monitor"),
         ("Wrong tariff narrative", "These AUD are wholesale-export experiment totals"),
     ]:
         doc.add_paragraph(f"{a}: {b}", style="List Bullet")
 
     doc.add_heading("Happy-path checklist", level=1)
     for item in [
-        "Landing → disclose heuristic preview",
-        "Digital Twin day 2012-07-14 · three controllers · results visible",
+        "Overview → disclose heuristic preview",
+        "Digital Twin day 2012-07-14 · three controllers · Run comparison · winner strip visible",
         "Results page · point at 90.39 vs ~124 vs ~140",
-        "Play (if time) · buttons under description · one action · oversight framing",
+        "Agent Play (if time) · setup → Start · one action · oversight framing",
+        "Optional Price Monitor · live vs typical load disclosure",
         "Close with theory-vs-deployed sentence · stop for Q&A",
     ]:
         doc.add_paragraph(item, style="List Number")
@@ -818,18 +858,21 @@ def update_markdown_mirrors():
         "Canonical files:\n\n"
         "- `deliverables/presentation/GreineQ_CA2_Presentation.pptx`\n"
         "- `deliverables/presentation/GreineQ_CA2_Speaker_Notes.docx`\n"
-        "- `deliverables/presentation/GreineQ_CA2_Live_Demo_Plan.docx`\n\n"
-        "Review fixes applied: true vs realistic foresight; three-bin (not bit); reward wording; "
-        "benchmark labels; RL concepts; teamwork allocation; broader ethics; synced speaker notes; "
-        "demo timing/roles/exact day; bar chart on results slide; sources backup slide.\n",
+        "- `deliverables/presentation/GreineQ_CA2_Live_Demo_Plan.docx`\n"
+        "- Operator guide: `deliverables/GreineQ_User_Guide.docx`\n\n"
+        "Aligned with current dashboard nav (Digital Twin · Price Monitor · Agent Play · Results · Overview), "
+        "Twin Run-comparison UX, Agent Play oversight framing, and User Guide demo path. "
+        "Earlier review fixes retained: true vs realistic foresight; three-bin; reward; benchmarks; RL concepts; "
+        "teamwork; ethics; synced notes; bar chart; sources backup.\n",
         encoding="utf-8",
     )
     demo_md.write_text(
         "# GréineQ CA2 — Live Demo Plan\n\n"
         "See Word document: `deliverables/presentation/GreineQ_CA2_Live_Demo_Plan.docx` "
-        "(kept in sync with the presentation review).\n\n"
+        "(kept in sync with the presentation + User Guide).\n\n"
         "**Exact day:** 2012-07-14 · **Driver:** Nathan · **Narrator:** Nadeesha · "
-        "**URL:** http://localhost:8501\n",
+        "**URL:** http://localhost:8501\n\n"
+        "**Path:** Overview → Digital Twin → Results → Agent Play → optional Price Monitor\n",
         encoding="utf-8",
     )
 
