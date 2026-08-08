@@ -52,6 +52,23 @@ desktop.ini
 # Personal reference (not for repo)
 GréineQ_RL_Colab.ipynb
 
+# Course deliverables kept local (presentations, speaker notes, reports, zips)
+deliverables/presentation/
+deliverables/server_runtime/
+deliverables/GreineQ_server_runtime.zip
+deliverables/**/*Speaker*
+deliverables/**/*Report*
+deliverables/**/*Defence*
+deliverables/**/*Presentation*
+deliverables/**/*Demo_Plan*
+deliverables/**/*Assessment_Brief*
+deliverables/**/*_final.docx
+deliverables/**/*.pptx
+deliverables/**/*.pdf
+# Keep markdown findings + user guide text in git if present; ignore generated Word/PDF copies of the guide
+deliverables/GreineQ_User_Guide.docx
+deliverables/GreineQ_User_Guide.pdf
+
 # Agent scratch exports (not for repo)
 dashboard/step_*.txt
 # Keep brand logo in git; ignore other generated assets in this folder
