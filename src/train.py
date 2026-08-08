@@ -28,12 +28,23 @@ def _greedy_eval(
     thresholds: BinThresholds,
     cfg: Config,
     reward_mode: str,
+    privileged: bool = False,
+    foresight_mode: str | None = None,
+    forecast_model=None,
 ) -> tuple[float, float]:
     """Roll out the current *greedy* (no-exploration) policy over a fixed set of
     days and return (mean total reward, mean grid-cost AUD). No Q-updates."""
     rewards, costs = [], []
     for day in days:
-        env = MicrogridEnv(get_episode(df, day), thresholds, cfg, reward_mode=reward_mode)
+        env = MicrogridEnv(
+            get_episode(df, day),
+            thresholds,
+            cfg,
+            reward_mode=reward_mode,
+            privileged=privileged,
+            foresight_mode=foresight_mode,
+            forecast_model=forecast_model,
+        )
         env.reset()
         total_reward = 0.0
         done = False
@@ -82,6 +93,9 @@ def train_agent(
     reward_mode: str = "battery_aware",
     val_days: list[str] | None = None,
     eval_every: int = 500,
+    privileged: bool = False,
+    foresight_mode: str | None = None,
+    forecast_model=None,
 ) -> tuple[list[dict], list[dict]]:
     """
     Run episodic training by sampling random train days.
@@ -91,11 +105,22 @@ def train_agent(
     logs: list[dict] = []
     eval_logs: list[dict] = []
     rng = np.random.default_rng(cfg.random_seed)
+    use_noise = bool(getattr(cfg, "forecast_train_noise", False))
 
     for episode_idx in range(1, cfg.n_episodes + 1):
         day = train_days[int(rng.integers(0, len(train_days)))]
         ep_df = get_episode(df, day)
-        env = MicrogridEnv(ep_df, thresholds, cfg, reward_mode=reward_mode)
+        env = MicrogridEnv(
+            ep_df,
+            thresholds,
+            cfg,
+            reward_mode=reward_mode,
+            privileged=privileged,
+            foresight_mode=foresight_mode,
+            forecast_model=forecast_model,
+            forecast_rng=rng if use_noise else None,
+            forecast_noise=use_noise,
+        )
 
         if hasattr(agent, "reset_episode"):
             agent.reset_episode()
@@ -139,7 +164,17 @@ def train_agent(
         )
 
         if val_days and episode_idx % eval_every == 0:
-            eval_reward, eval_cost = _greedy_eval(agent, df, val_days, thresholds, cfg, reward_mode)
+            eval_reward, eval_cost = _greedy_eval(
+                agent,
+                df,
+                val_days,
+                thresholds,
+                cfg,
+                reward_mode,
+                privileged=privileged,
+                foresight_mode=foresight_mode,
+                forecast_model=forecast_model,
+            )
             eval_logs.append(
                 {"episode": episode_idx, "val_mean_reward": eval_reward, "val_mean_grid_cost_aud": eval_cost}
             )
@@ -227,9 +262,19 @@ def save_eval_log(eval_logs: list[dict], path: Path) -> None:
         writer.writerows(eval_logs)
 
 
-def make_agent(name: str, cfg: Config, seed: int | None = None, q_init: float = 0.0):
+def make_agent(
+    name: str,
+    cfg: Config,
+    seed: int | None = None,
+    q_init: float = 0.0,
+    privileged: bool = False,
+    n_states: int | None = None,
+):
     """Factory for supported tabular agents using training hyperparameters from config."""
+    from src.discretizer import n_states_for
+
     agent_seed = cfg.random_seed if seed is None else seed
+    ns = n_states if n_states is not None else n_states_for(privileged)
     common = dict(
         alpha=cfg.alpha,
         gamma=cfg.gamma,
@@ -240,6 +285,7 @@ def make_agent(name: str, cfg: Config, seed: int | None = None, q_init: float = 
         alpha_min=cfg.alpha_min,
         seed=agent_seed,
         q_init=q_init,
+        n_states=ns,
     )
     if name == "q_learning":
         return QLearningAgent(**common)
@@ -250,14 +296,26 @@ def make_agent(name: str, cfg: Config, seed: int | None = None, q_init: float = 
     raise ValueError(f"Unknown agent: {name}")
 
 
-def load_trained_agent(name: str, model_path: Path, cfg: Config):
+def load_trained_agent(name: str, model_path: Path, cfg: Config, privileged: bool | None = None):
     """Restore a trained agent from disk and disable exploration."""
-    agent = make_agent(name, cfg)
+    import numpy as np
+
+    arr = np.load(model_path)
     if name == "double_q_learning":
+        n_states = int(arr.shape[1]) if arr.ndim == 3 else int(arr.shape[0])
+        agent = make_agent(name, cfg, n_states=n_states)
         agent.load(model_path)
     else:
+        n_states = int(arr.shape[0])
+        agent = make_agent(name, cfg, n_states=n_states)
         agent.q = agent.q.load(model_path)
     agent.epsilon = 0.0
+    if privileged is not None:
+        agent.privileged = privileged  # type: ignore[attr-defined]
+    else:
+        from src.discretizer import N_STATES_PRIVILEGED
+
+        agent.privileged = n_states == N_STATES_PRIVILEGED  # type: ignore[attr-defined]
     return agent
 
 
@@ -291,6 +349,17 @@ def main() -> None:
         "--q-init", type=float, default=0.0,
         help="Optimistic Q-table initial value (encourages exploring under-tried actions, e.g. grid_charge/export)",
     )
+    parser.add_argument(
+        "--privileged",
+        action="store_true",
+        help="Include 4-hour future price-direction signal in the state",
+    )
+    parser.add_argument(
+        "--foresight",
+        choices=["oracle", "forecast"],
+        default=None,
+        help="Privileged signal type (default: config forecast.mode)",
+    )
     args = parser.parse_args()
 
     cfg = load_config()
@@ -307,20 +376,48 @@ def main() -> None:
 
     ensure_output_dirs(cfg)
     df, day_split = load_customer_dataset(cfg)
-    thresholds = fit_discretizer(df, cfg)
+
+    privileged = bool(args.privileged)
+    foresight = args.foresight or (
+        cfg.forecast_mode if cfg.forecast_mode in ("oracle", "forecast") else "forecast"
+    )
+    forecast_model = None
+    if privileged and foresight == "forecast":
+        from src.price_forecast import fit_price_forecast
+
+        forecast_model = fit_price_forecast(
+            df,
+            horizon_steps=cfg.forecast_horizon_steps,
+            persistence_alpha=cfg.forecast_persistence_alpha,
+            noise_scale=cfg.forecast_noise_scale,
+        )
+        forecast_model.save(cfg.artifacts_dir / "price_forecast.json")
+
+    thresholds = fit_discretizer(
+        df,
+        cfg,
+        foresight_mode=foresight if privileged else "oracle",
+        forecast_model=forecast_model,
+    )
     thresholds.save(cfg.artifacts_dir / "bin_thresholds.json")
 
-    agent = make_agent(args.agent, cfg, seed=cfg.random_seed, q_init=args.q_init)
+    agent = make_agent(
+        args.agent, cfg, seed=cfg.random_seed, q_init=args.q_init, privileged=privileged
+    )
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    tag = f"_{args.tag}" if args.tag else ""
+    priv_tag = f"_privileged_{foresight}" if privileged else "_current"
+    tag = f"{priv_tag}_{args.tag}" if args.tag else priv_tag
 
     print(
-        f"Training {args.agent} for {cfg.n_episodes} episodes on {len(day_split.train)} train days "
-        f"(gamma={cfg.gamma}, epsilon={cfg.epsilon}, decay={cfg.epsilon_decay})..."
+        f"Training {args.agent} ({'privileged/'+foresight if privileged else 'current-info'}) "
+        f"for {cfg.n_episodes} episodes on {len(day_split.train)} train days "
+        f"(export={cfg.tariff.export_pricing}, gamma={cfg.gamma}, epsilon={cfg.epsilon})..."
     )
     logs, eval_logs = train_agent(
         agent, df, day_split.train, thresholds, cfg, args.reward_mode,
-        val_days=day_split.val, eval_every=500,
+        val_days=day_split.val, eval_every=500, privileged=privileged,
+        foresight_mode=foresight if privileged else "none",
+        forecast_model=forecast_model,
     )
 
     model_path = cfg.results_models / f"Q_{args.agent}_{stamp}{tag}.npy"
@@ -347,7 +444,18 @@ def main() -> None:
     print(f"Saved eval plot -> {eval_plot_path}")
 
     policy = greedy_action_fn(agent)
-    test_results = evaluate_split(df, thresholds, day_split, "test", policy, cfg, args.reward_mode)
+    test_results = evaluate_split(
+        df,
+        thresholds,
+        day_split,
+        "test",
+        policy,
+        cfg,
+        args.reward_mode,
+        privileged=privileged,
+        foresight_mode=foresight if privileged else "none",
+        forecast_model=forecast_model,
+    )
     test_stats = summarize(test_results)
     print("\nGreedy policy on TEST split:")
     for k, v in test_stats.items():

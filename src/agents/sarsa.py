@@ -28,6 +28,8 @@ class SARSAAgent:
         alpha_min: float = 0.01,
         seed: int = 42,
         q_init: float = 0.0,
+        n_states: int | None = None,
+        n_actions: int | None = None,
     ) -> None:
         self.alpha = alpha
         self.gamma = gamma
@@ -37,8 +39,17 @@ class SARSAAgent:
         self.alpha_decay = alpha_decay
         self.alpha_min = alpha_min
         self.rng = np.random.default_rng(seed)
-        self.q = QTable(init_value=q_init)
+        from src.discretizer import N_ACTIONS, N_STATES
+
+        self.q = QTable(
+            n_states=N_STATES if n_states is None else n_states,
+            n_actions=N_ACTIONS if n_actions is None else n_actions,
+            init_value=q_init,
+        )
         self._next_action: int | None = None
+
+    def greedy_action(self, state: int) -> int:
+        return self.q.greedy_action(state)
 
     def select_action(self, state: int) -> int:
         return self.q.select_action(state, self.epsilon, self.rng)

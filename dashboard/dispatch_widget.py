@@ -282,7 +282,7 @@ def _render_landing_control_centre(trace, demo_day: str = "") -> None:
     <span id="day-label"></span>
   </div>
   <div class="head-block">
-    <p class="core-title">GréineQ Control Core</p>
+    <p class="core-title">Day replay</p>
     <p class="core-sub">Reinforcement learning for solar battery dispatch</p>
     <div id="action-pill" class="action-pill hold">Hold</div>
     <div style="font-size:0.65rem;color:#64748b;margin-top:0.15rem;">Q-Agent decision</div>
@@ -292,7 +292,7 @@ def _render_landing_control_centre(trace, demo_day: str = "") -> None:
     <div class="stat"><span>Time of day</span><strong id="s-time">--:--</strong></div>
     <div class="stat"><span>Battery state of charge</span><strong id="s-soc">--%</strong></div>
     <div class="stat"><span>Grid import cost</span><strong id="s-grid">$0.00</strong></div>
-    <div class="stat"><span>Step reward</span><strong id="s-reward">0.000</strong></div>
+    <div class="stat"><span>Step score</span><strong id="s-reward">0.000</strong></div>
   </div>
   <div class="flow-stage">
     <div class="flow-grid">
@@ -580,46 +580,77 @@ setInterval(tick, 600);
     )
 
 
-def render_topbar_dispatch(actions: list[str], times: list[str], soc: list[float]) -> None:
-    """Compact Q-Agent energy-flow pipeline for the dashboard top bar."""
+def render_topbar_dispatch(
+    actions: list[str],
+    times: list[str],
+    soc: list[float],
+    *,
+    show_action_badge: bool = False,
+) -> None:
+    """Compact Q-Agent energy-flow pipeline (sidebar / chart companion)."""
     payload = {
         "actions": actions[:48],
         "times": times[:48],
         "soc": [float(s) for s in soc[:48]],
     }
     data_json = json.dumps(payload)
+    action_html = ""
+    if show_action_badge:
+        action_html = """
+  <div id="c4" class="conn hold"><div class="conn-pulse"></div></div>
+  <div class="segment action-segment">
+    <div class="icon-box"><span id="badge" class="badge hold">Hold</span></div>
+    <span class="lbl">Action</span>
+  </div>"""
+    badge_js = (
+        """
+  const badge = document.getElementById('badge');
+  if (badge) {
+    badge.textContent = LABELS[act] || 'Hold';
+    badge.className = 'badge ' + act;
+  }
+  const c4 = document.getElementById('c4');
+  if (c4) setConn('c4', true, KNOWN_ACTIONS.has(act) ? act : 'hold');
+"""
+        if show_action_badge
+        else ""
+    )
+    height = 128 if not show_action_badge else 108
     components.html(
         f"""
 <!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
   * {{ box-sizing: border-box; }}
   body {{ margin: 0; padding: 0; background: transparent; font-family: system-ui, sans-serif; color: #e2e8f0; }}
+  .wrap {{
+    display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
+    padding: 0.2rem 0.15rem 0.1rem; width: 100%;
+  }}
   .pipeline {{
-    display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: center;
-    gap: 0 0.45rem; padding: 0.15rem 0.35rem; min-height: 88px; width: 100%;
+    display: flex; flex-wrap: nowrap; align-items: flex-start; justify-content: center;
+    gap: 0 0.28rem; width: 100%;
   }}
   .segment {{
-    display: flex; flex-direction: column; align-items: center; gap: 0.22rem;
+    display: flex; flex-direction: column; align-items: center; gap: 0.18rem;
     flex-shrink: 0;
   }}
   .icon-box {{
-    height: 40px; min-width: 40px;
+    height: 36px; min-width: 34px;
     display: flex; align-items: center; justify-content: center;
   }}
   .lbl {{
-    font-size: 0.5rem; color: #64748b; letter-spacing: 0.05em; text-transform: uppercase;
-    text-align: center; line-height: 1.1; white-space: nowrap; min-height: 0.55rem;
+    font-size: 0.48rem; color: #64748b; letter-spacing: 0.04em; text-transform: uppercase;
+    text-align: center; line-height: 1.1; white-space: nowrap;
   }}
   .step {{
-    font-size: 0.48rem; color: #64748b; white-space: nowrap; text-align: center;
-    line-height: 1.1; min-height: 0.55rem;
+    font-size: 0.58rem; color: #94a3b8; white-space: nowrap; text-align: center;
+    font-variant-numeric: tabular-nums; letter-spacing: 0.02em;
   }}
-  /* Q-Agent — letter Q only, no sun orb */
   .q-hub {{
-    width: 38px; height: 38px; border-radius: 50%;
+    width: 34px; height: 34px; border-radius: 50%;
     background: #0f1729; border: 2px solid rgba(245,156,26,0.45);
     display: flex; align-items: center; justify-content: center;
-    font-size: 1rem; font-weight: 800; color: #f59e1a;
+    font-size: 0.92rem; font-weight: 800; color: #f59e1a;
     box-shadow: 0 0 10px rgba(245,156,26,0.2);
     position: relative;
   }}
@@ -628,11 +659,10 @@ def render_topbar_dispatch(actions: list[str], times: list[str], soc: list[float
     border: 1px solid rgba(245,156,26,0.18); animation: spin 14s linear infinite;
   }}
   @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
-  /* Solar panel — distinct from Q orb */
   .solar-panel {{
-    width: 34px; height: 26px; padding: 3px;
+    width: 30px; height: 22px; padding: 2px;
     background: #1e293b; border: 1px solid rgba(148,163,184,0.35); border-radius: 4px;
-    display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); gap: 2px;
+    display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); gap: 1.5px;
     transition: border-color 0.35s, box-shadow 0.35s;
   }}
   .solar-panel .cell {{
@@ -641,13 +671,12 @@ def render_topbar_dispatch(actions: list[str], times: list[str], soc: list[float
   .solar-panel.active {{ border-color: rgba(245,156,26,0.5); box-shadow: 0 0 8px rgba(245,156,26,0.25); }}
   .solar-panel.active .cell {{ background: rgba(245,156,26,0.75); }}
   .solar-panel.dim .cell {{ background: #334155; opacity: 0.6; }}
-  /* Battery */
   .batt-wrap {{ display: flex; flex-direction: column; align-items: center; }}
   .batt-cap {{
-    width: 14px; height: 3px; background: #64748b; border-radius: 2px 2px 0 0;
+    width: 12px; height: 3px; background: #64748b; border-radius: 2px 2px 0 0;
   }}
   .battery {{
-    width: 28px; height: 36px; border: 1.5px solid rgba(148,163,184,0.4);
+    width: 24px; height: 32px; border: 1.5px solid rgba(148,163,184,0.4);
     border-radius: 4px; background: #0f1729; position: relative; overflow: hidden;
   }}
   .battery-fill {{
@@ -657,30 +686,28 @@ def render_topbar_dispatch(actions: list[str], times: list[str], soc: list[float
   .battery-pct {{
     position: absolute; inset: 0; z-index: 1;
     display: flex; align-items: center; justify-content: center;
-    font-size: 0.48rem; font-weight: 700;
+    font-size: 0.45rem; font-weight: 700;
     color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.6);
   }}
-  /* Home / grid */
   .home-grid {{
     display: flex; flex-direction: column; align-items: center; gap: 1px;
   }}
   .home-roof {{
     width: 0; height: 0;
-    border-left: 11px solid transparent; border-right: 11px solid transparent;
-    border-bottom: 9px solid #6366f1;
+    border-left: 10px solid transparent; border-right: 10px solid transparent;
+    border-bottom: 8px solid #6366f1;
   }}
   .home-body {{
-    width: 22px; height: 13px; background: #4338ca; border-radius: 0 0 2px 2px;
+    width: 20px; height: 12px; background: #4338ca; border-radius: 0 0 2px 2px;
     transition: box-shadow 0.35s, opacity 0.35s; opacity: 0.75;
   }}
   .home-grid.active .home-body {{ opacity: 1; box-shadow: 0 0 8px rgba(99,102,241,0.45); }}
   .grid-tick {{
-    width: 14px; height: 2px; background: rgba(148,163,184,0.35); border-radius: 99px; margin-top: 2px;
+    width: 12px; height: 2px; background: rgba(148,163,184,0.35); border-radius: 99px; margin-top: 2px;
   }}
-  /* Connectors — vertically centred on icon row */
   .conn {{
-    width: 24px; height: 3px; border-radius: 99px; background: rgba(148,163,184,0.18);
-    position: relative; flex-shrink: 0; align-self: flex-start; margin-top: 18px;
+    width: 16px; height: 3px; border-radius: 99px; background: rgba(148,163,184,0.18);
+    position: relative; flex-shrink: 0; align-self: flex-start; margin-top: 16px;
   }}
   .conn-pulse {{
     position: absolute; top: 0; left: -20%; width: 35%; height: 100%; border-radius: 99px;
@@ -694,11 +721,10 @@ def render_topbar_dispatch(actions: list[str], times: list[str], soc: list[float
   .conn.grid_charge .conn-pulse {{ background: #0ea5e9; box-shadow: 0 0 4px #0ea5e9; }}
   .conn.export .conn-pulse {{ background: #a855f7; box-shadow: 0 0 4px #a855f7; }}
   @keyframes flow {{ 0% {{ left: -20%; }} 100% {{ left: 100%; }} }}
-  /* Action badge — same icon row as other nodes */
-  .action-segment {{ min-width: 68px; }}
+  .action-segment {{ min-width: 58px; }}
   .badge {{
-    font-size: 0.58rem; font-weight: 700; letter-spacing: 0.03em;
-    padding: 0.2rem 0.5rem; border-radius: 6px; border: 1px solid; white-space: nowrap;
+    font-size: 0.55rem; font-weight: 700; letter-spacing: 0.03em;
+    padding: 0.18rem 0.45rem; border-radius: 6px; border: 1px solid; white-space: nowrap;
     line-height: 1.2;
   }}
   .badge.hold {{ color: #94a3b8; background: rgba(100,116,139,0.16); border-color: rgba(100,116,139,0.35); }}
@@ -706,12 +732,8 @@ def render_topbar_dispatch(actions: list[str], times: list[str], soc: list[float
   .badge.discharge {{ color: #fbbf24; background: rgba(245,156,26,0.14); border-color: rgba(245,156,26,0.4); }}
   .badge.grid_charge {{ color: #38bdf8; background: rgba(14,165,233,0.12); border-color: rgba(14,165,233,0.35); }}
   .badge.export {{ color: #c084fc; background: rgba(168,85,247,0.12); border-color: rgba(168,85,247,0.35); }}
-  @media (max-width: 520px) {{
-    .conn {{ width: 16px; }}
-    .icon-box {{ min-width: 34px; }}
-    .lbl, .step {{ font-size: 0.44rem; }}
-  }}
 </style></head><body>
+<div class="wrap">
 <div class="pipeline">
   <div class="segment">
     <div class="icon-box"><div class="q-hub">Q</div></div>
@@ -751,12 +773,9 @@ def render_topbar_dispatch(actions: list[str], times: list[str], soc: list[float
     </div>
     <span class="lbl">Home / Grid</span>
   </div>
-  <div id="c4" class="conn hold"><div class="conn-pulse"></div></div>
-  <div class="segment action-segment">
-    <div class="icon-box"><span id="badge" class="badge hold">Hold</span></div>
-    <span id="step" class="step">Step 1/48 · --:--</span>
-    <span class="lbl">Action</span>
-  </div>
+  {action_html}
+</div>
+<span id="step" class="step">Step 1/48 · --:--</span>
 </div>
 <script>
 const DATA = {data_json};
@@ -773,6 +792,7 @@ function socColor(p) {{
 }}
 function setConn(id, on, cls) {{
   const el = document.getElementById(id);
+  if (!el) return;
   el.className = 'conn ' + cls + (on ? ' active' : '');
   if (!el.querySelector('.conn-pulse')) el.innerHTML = '<div class="conn-pulse"></div>';
 }}
@@ -781,8 +801,7 @@ function tick() {{
   const act = actions[idx] || 'hold';
   const s = soc[idx] ?? 30;
   const solarOn = idx >= 10 && idx <= 36;
-  document.getElementById('badge').textContent = LABELS[act] || 'Hold';
-  document.getElementById('badge').className = 'badge ' + act;
+  {badge_js}
   document.getElementById('step').textContent = 'Step ' + (idx + 1) + '/48 · ' + (times[idx] || '--:--');
   const fill = document.getElementById('fill');
   fill.style.height = Math.max(8, s) + '%';
@@ -795,7 +814,6 @@ function tick() {{
   setConn('c1', solarOn, 'solar');
   setConn('c2', act === 'charge', 'charge');
   setConn('c3', act !== 'hold', KNOWN_ACTIONS.has(act) ? act : 'hold');
-  setConn('c4', true, KNOWN_ACTIONS.has(act) ? act : 'hold');
   idx = (idx + 1) % actions.length;
 }}
 tick();
@@ -803,7 +821,7 @@ setInterval(tick, 650);
 </script>
 </body></html>
         """,
-        height=108,
+        height=height,
         scrolling=False,
     )
 

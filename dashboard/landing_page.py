@@ -59,29 +59,54 @@ LANDING_CSS = """
         margin: 0.85rem auto 0.5rem;
     }
 
-    .st-key-enter_twin_main {
-        max-width: 22rem;
-        margin: 0.25rem auto 1rem;
+    .st-key-enter_twin_main,
+    .st-key-enter_play_main {
+        max-width: 13.5rem;
+        margin: 0.15rem auto 0.35rem;
+    }
+
+    .st-key-enter_twin_main button,
+    .st-key-enter_play_main button {
+        width: 100% !important;
+        border-radius: 8px !important;
+        padding: 0.45rem 0.75rem !important;
+        font-family: 'Barlow Condensed', sans-serif !important;
+        font-size: 0.72rem !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.08em !important;
+        text-transform: uppercase !important;
+        min-height: 2.15rem !important;
+        box-shadow: none !important;
     }
 
     .st-key-enter_twin_main button {
-        width: 100%;
         background: linear-gradient(135deg, #fbbf24 0%, #f59e1a 55%, #d97706 100%) !important;
         color: #1c1917 !important;
         border: none !important;
-        border-radius: 10px !important;
-        padding: 0.85rem 1.25rem !important;
-        font-family: 'Barlow Condensed', sans-serif !important;
-        font-size: 0.82rem !important;
-        font-weight: 700 !important;
-        letter-spacing: 0.14em !important;
-        text-transform: uppercase !important;
-        box-shadow: 0 6px 24px rgba(245, 156, 26, 0.4) !important;
     }
 
     .st-key-enter_twin_main button:hover {
-        box-shadow: 0 9px 32px rgba(245, 156, 26, 0.55) !important;
+        box-shadow: 0 4px 14px rgba(245, 156, 26, 0.35) !important;
         transform: translateY(-1px) !important;
+    }
+
+    .st-key-enter_play_main button {
+        background: rgba(15, 23, 42, 0.55) !important;
+        color: #e2e8f0 !important;
+        border: 1px solid rgba(148, 163, 184, 0.35) !important;
+    }
+
+    .st-key-enter_play_main button:hover {
+        border-color: rgba(245, 156, 26, 0.4) !important;
+        color: #fde68a !important;
+    }
+
+    .gq-landing-cta-row {
+        display: flex;
+        justify-content: center;
+        gap: 0.65rem;
+        flex-wrap: wrap;
+        margin: 0.15rem 0 0.75rem;
     }
 
     .st-key-gq_hero {
@@ -169,6 +194,8 @@ LANDING_CSS = """
         .gq-title-bar { padding: 1.15rem 1rem 0.85rem; }
         .gq-explain { padding: 0.85rem 0.9rem; }
         .gq-explain p { font-size: 0.84rem; }
+        .st-key-enter_twin_main,
+        .st-key-enter_play_main { max-width: 100%; }
         .st-key-enter_twin_main { max-width: 100%; }
     }
 
@@ -180,8 +207,32 @@ LANDING_CSS = """
 """
 
 
-def render_landing_header() -> bool:
-    st.markdown(LANDING_CSS, unsafe_allow_html=True)
+def render_landing_ctas(*, inject_css: bool = False) -> tuple[bool, bool]:
+    """Compact entry buttons — place directly under the tagline."""
+    if inject_css:
+        st.markdown(LANDING_CSS, unsafe_allow_html=True)
+    # Narrow centred pair — not full-bleed wide buttons
+    _l, c1, c2, _r = st.columns([1.1, 1.15, 1.15, 1.1])
+    with c1:
+        twin = st.button(
+            "Digital Twin →",
+            type="primary",
+            width="stretch",
+            key="enter_twin_main",
+        )
+    with c2:
+        play = st.button(
+            "Play vs Agent",
+            type="secondary",
+            width="stretch",
+            key="enter_play_main",
+        )
+    return twin, play
+
+
+def render_landing_header(*, show_cta: bool = True, inject_css: bool = True) -> bool:
+    if inject_css:
+        st.markdown(LANDING_CSS, unsafe_allow_html=True)
 
     st.markdown(
         f"""<div class="gq-card">
@@ -193,13 +244,14 @@ def render_landing_header() -> bool:
         unsafe_allow_html=True,
     )
 
-    clicked = st.button(
-        "Enter Interactive Digital Twin  →",
+    if not show_cta:
+        return False
+    return st.button(
+        "Digital Twin →",
         type="primary",
         width="stretch",
         key="enter_twin_main",
     )
-    return clicked
 
 
 def render_landing_body(trace, demo_day: str = "") -> None:
@@ -208,18 +260,18 @@ def render_landing_body(trace, demo_day: str = "") -> None:
 
     st.markdown(
         """<div class="gq-explain">
-<h3>Simulation replay</h3>
-<p>GréineQ replays a historical solar microgrid day. At each 30-minute timestep, the Q-Agent
-observes solar generation, household demand, battery state of charge, and grid price, then
-selects a battery action: hold, charge from solar, discharge to load, grid-charge, or export —
-the last two enable CA2's price-arbitrage extension on top of the CA1 solar-only dispatch.</p>
+<h3>What you are seeing</h3>
+<p>GréineQ replays a historical solar-battery day in 30-minute steps. At each step the agent
+sees solar generation, household demand, battery charge level, and grid price — then chooses
+hold, charge from solar, discharge to the home, grid-charge (buy), or export (sell).
+Grid-charge and export enable price arbitrage: buy low, use or sell later.</p>
 </div>
 <div class="gq-action-strip">
-<span class="gq-action-badge gq-badge-hold"><span class="gq-badge-dot" style="background:#64748b"></span>Hold — dispatch action</span>
+<span class="gq-action-badge gq-badge-hold"><span class="gq-badge-dot" style="background:#64748b"></span>Hold</span>
 <span class="gq-action-badge gq-badge-charge"><span class="gq-badge-dot" style="background:#22c55e"></span>Charge battery</span>
 <span class="gq-action-badge gq-badge-discharge"><span class="gq-badge-dot" style="background:#f59e1a"></span>Discharge battery</span>
-<span class="gq-action-badge gq-badge-grid_charge"><span class="gq-badge-dot" style="background:#0ea5e9"></span>Grid-charge (arbitrage)</span>
-<span class="gq-action-badge gq-badge-export"><span class="gq-badge-dot" style="background:#a855f7"></span>Export (arbitrage)</span>
+<span class="gq-action-badge gq-badge-grid_charge"><span class="gq-badge-dot" style="background:#0ea5e9"></span>Grid-charge (buy)</span>
+<span class="gq-action-badge gq-badge-export"><span class="gq-badge-dot" style="background:#a855f7"></span>Export (sell)</span>
 </div>""",
         unsafe_allow_html=True,
     )
