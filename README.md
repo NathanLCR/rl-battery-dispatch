@@ -210,14 +210,18 @@ python -m src.train --agent double_q_learning --episodes 10000 --tag current
 - **Ethics / deployment:** experimental tariff and partial live inputs are disclosed; Live Price Monitor is informational; Play is an oversight demo; this is a software twin, not a physical battery.
 - Chronological train/val/test; foresight thresholds fitted on **train only**.
 
-## Docker
+## Docker (Web Twin)
 
+Publishes the **FastAPI web app** (container port **8000**, host default **8501**).  
 See [Dockerfile/README.md](Dockerfile/README.md).
 
 ```bash
 docker compose -f Dockerfile/docker-compose.yml up -d --build
+# health: http://localhost:8501/api/health
 ```
 
+Local web without Docker: `.\run_web.ps1` → http://localhost:8080  
+Streamlit (optional local): `python -m streamlit run dashboard/app.py`
 ## License
 
 Research and educational use. Raw Ausgrid and AEMO datasets are subject to their respective terms of use.
