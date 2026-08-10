@@ -55,25 +55,29 @@ desktop.ini
 # Personal reference (not for repo)
 GréineQ_RL_Colab.ipynb
 
-# Course deliverables kept local (presentations, speaker notes, reports, zips)
-deliverables/presentation/
+# Course deliverables kept local (reports / drafts / runtime packs)
 deliverables/server_runtime/
 deliverables/GreineQ_server_runtime.zip
 deliverables/**/*Speaker*
 deliverables/**/*Report*
 deliverables/**/*Defence*
-deliverables/**/*Presentation*
 deliverables/**/*Demo_Plan*
 deliverables/**/*Assessment_Brief*
 deliverables/**/*_final.docx
-deliverables/**/*.pptx
 deliverables/**/*.pdf
-# Keep markdown findings + user guide text in git if present; ignore generated Word/PDF copies of the guide
+# Keep markdown findings + user guide text; ignore generated Word/PDF copies of the guide
 deliverables/GreineQ_User_Guide.docx
 deliverables/GreineQ_User_Guide.pdf
+# Presentation drafts ignored; track the final CA2 deck only
+deliverables/presentation/*
+!deliverables/presentation/GreineQ_CA2_Presentation.pptx
+deliverables/**/*.pptx
+!deliverables/presentation/GreineQ_CA2_Presentation.pptx
 
 # Agent scratch exports (not for repo)
 dashboard/step_*.txt
 # Keep brand logo in git; ignore other generated assets in this folder
 dashboard/assets/*
 !dashboard/assets/greineq_logo.svg
+
+# UI screenshots for README are tracked under docs/screenshots/

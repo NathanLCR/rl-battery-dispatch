@@ -4,8 +4,13 @@ Tabular reinforcement learning for residential battery dispatch on a solar-conne
 
 **Brand spelling:** GréineQ (filenames may use ASCII `GreineQ`).
 
-**User guide:** [`deliverables/GreineQ_User_Guide.md`](deliverables/GreineQ_User_Guide.md)  
-Regenerate Word version: `python scripts/build_user_guide_docx.py` → `deliverables/GreineQ_User_Guide.docx`
+| Resource | Link |
+|----------|------|
+| **Live app** | [https://greineq-agent.sudocod.com/](https://greineq-agent.sudocod.com/) |
+| **User guide** | [`deliverables/GreineQ_User_Guide.md`](deliverables/GreineQ_User_Guide.md) |
+| **CA02 cover note** | [`deliverables/B9AI105_Group_CA02_Cover_Note.md`](deliverables/B9AI105_Group_CA02_Cover_Note.md) |
+| **Final presentation (PPTX)** | [`deliverables/presentation/GreineQ_CA2_Presentation.pptx`](deliverables/presentation/GreineQ_CA2_Presentation.pptx) |
+| **Presentation + recording (Drive)** | [Google Drive folder](https://drive.google.com/drive/folders/12vc-RRwxKix4hWDKO1u6VhppgT2KjyNz?usp=sharing) |
 
 ---
 
@@ -21,6 +26,20 @@ Regenerate Word version: `python scripts/build_user_guide_docx.py` → `delivera
 | **Price Monitor** | Live AEMO NSW1 price + typical PV/load (informational; not historical Twin) |
 | **Agent Play** | You vs RL vs Greedy on identical twins — oversight demo |
 | **Results** | Curated CA2 headline chart, KPIs, and interpretation |
+
+### Screenshots
+
+**Digital Twin — simulation replay** (Q-agent decision, SOC, daily dispatch timeline):
+
+![Digital Twin simulation replay](docs/screenshots/digital_twin_replay.png)
+
+**Digital Twin — same-day controller comparison** (KPIs, results table, energy chart):
+
+![Digital Twin controller comparison](docs/screenshots/digital_twin_comparison.png)
+
+**Agent Play** (human vs Current Q vs Greedy, with forecast panel):
+
+![Play vs Agent](docs/screenshots/play_vs_agent.png)
 
 ### Run locally
 
@@ -140,14 +159,14 @@ Write-up: [`deliverables/notebooklm/CA2_Forecast_Info_Experiment_Findings.md`](d
 
 ## Presentation pack
 
-```
-deliverables/presentation/
-  GreineQ_CA2_Presentation.pptx
-  GreineQ_CA2_Speaker_Notes.docx
-  GreineQ_CA2_Live_Demo_Plan.docx
-```
+**Final deck (this submission):** [`deliverables/presentation/GreineQ_CA2_Presentation.pptx`](deliverables/presentation/GreineQ_CA2_Presentation.pptx)  
+(Copied from `CA2/GréineQ_RL_Battery_Dispatch_(2).pptx`.)
 
-Regenerate: `python scripts/build_ca2_presentation.py`.
+**Recording + shared folder:** [https://drive.google.com/drive/folders/12vc-RRwxKix4hWDKO1u6VhppgT2KjyNz?usp=sharing](https://drive.google.com/drive/folders/12vc-RRwxKix4hWDKO1u6VhppgT2KjyNz?usp=sharing)
+
+**CA02 cover note:** [`deliverables/B9AI105_Group_CA02_Cover_Note.md`](deliverables/B9AI105_Group_CA02_Cover_Note.md)
+
+---
 
 ## Earlier CA2 work (grid-charge / export MDP)
 
@@ -180,6 +199,7 @@ Run all commands from the repository root (`rl-battery-dispatch/`).
 ```
 ├── config.yaml
 ├── requirements.txt
+├── docs/screenshots/               # README UI screenshots
 ├── src/
 │   ├── environment.py              # Microgrid MDP (5 actions, wholesale export)
 │   ├── physics.py                  # Efficiencies, cycling, SOC limits
@@ -199,13 +219,13 @@ Run all commands from the repository root (`rl-battery-dispatch/`).
 │   └── landing_page.py / theme.py / dispatch_widget.py
 ├── scripts/
 │   ├── system_test.py
-│   ├── build_ca2_presentation.py
+│   ├── build_ca2_cover_note.py
 │   └── build_user_guide_docx.py
 ├── deliverables/
-│   ├── GreineQ_User_Guide.md       # End-user guide
-│   ├── presentation/               # PPTX + speaker notes + demo plan
-│   ├── notebooklm/                 # Findings + defence notes
-│   └── relatorio_dataset.md        # Dataset QA notes (CA1)
+│   ├── GreineQ_User_Guide.md
+│   ├── B9AI105_Group_CA02_Cover_Note.md
+│   ├── presentation/GreineQ_CA2_Presentation.pptx   # final CA2 deck
+│   └── notebooklm/                 # CA2 findings write-ups
 ├── results/
 │   └── models/README.md            # How to obtain / place Q-tables
 ├── Dockerfile/
