@@ -4,26 +4,55 @@ Tabular reinforcement learning for residential battery dispatch on a solar-conne
 
 **Brand spelling:** GréineQ (filenames may use ASCII `GreineQ`).
 
-## Live dashboard
+**User guide:** [`deliverables/GreineQ_User_Guide.md`](deliverables/GreineQ_User_Guide.md)  
+Regenerate Word version: `python scripts/build_user_guide_docx.py` → `deliverables/GreineQ_User_Guide.docx`
+
+---
+
+## Live app
 
 **Published instance:** [https://greineq-agent.sudocod.com/](https://greineq-agent.sudocod.com/)  
 *(Production may lag `ca2_agent` — run locally for the latest Twin / Play / Results UI.)*
 
 | View | Description |
 |------|-------------|
-| Overview | Landing page with heuristic replay preview (not the trained Q agent) |
+| **Overview** | Landing page with heuristic day-replay preview (not the trained Q agent) |
 | **Digital Twin** | Same-day controller comparison, KPIs, charts, timestep inspector |
-| **Live Price Monitor** | Live AEMO NSW1 price + typical PV/load (informational; not historical Twin) |
-| **Play vs Agent** | Human vs RL vs Greedy on identical twins — oversight demo |
-| **Experiment Results** | Curated CA2 headline chart, KPIs, and interpretation |
+| **Price Monitor** | Live AEMO NSW1 price + typical PV/load (informational; not historical Twin) |
+| **Agent Play** | You vs RL vs Greedy on identical twins — oversight demo |
+| **Results** | Curated CA2 headline chart, KPIs, and interpretation |
+
+### Run locally
+
+**Web Twin (primary UI):**
 
 ```powershell
 cd rl-battery-dispatch
-.\run_dashboard.ps1
-# or: python -m streamlit run dashboard/app.py --server.port 8501
+.\run_web.ps1
+# → http://localhost:8080
 ```
 
-Open **http://localhost:8501**. Smoke check: `python scripts/system_test.py`.
+**Streamlit (optional, local research):**
+
+```powershell
+.\run_dashboard.ps1
+# or: python -m streamlit run dashboard/app.py --server.port 8501
+# → http://localhost:8501
+```
+
+Smoke check: `python scripts/system_test.py`.
+
+### Demo notes
+
+- **Digital Twin:** Auto-runs once on first open; after settings change, click **Run comparison** again.
+- **Privileged Q (Twin):** labelled “true 4h signal” and always evaluated with **oracle** direction (Web Twin and Streamlit).
+- **Agent Play:** You receive a **realistic** 4h forecast; Privileged opponents may use a **true** direction signal — framed as an **interactive oversight demo**, not a scientifically fair contest.
+- Suggested Twin/demo day: `2012-07-14` with `forecast_exp` models (seed 42) under `results/models/` (see that folder’s README).
+- Landing animation = heuristic preview, not the trained Q-Learning agent.
+- Prefer **Test (held-out)** days for demos. **Lower net cost is better.**
+- **Models are gitignored:** copy trained `.npy` files into `results/models/` (or retrain) before Twin / Play.
+
+---
 
 ## CA2 contribution: forecast-information experiment
 
@@ -39,7 +68,7 @@ Open **http://localhost:8501**. Smoke check: `python scripts/system_test.py`.
 | Current Q | Current state + price | Tabular Q-Learning |
 | Privileged Q | Current + **true** 4h direction (3 bins) | Information probe on that feature |
 
-Primary algorithm: **Q-Learning** (ε-greedy train, argmax eval). SARSA and Double Q-Learning are supported in the same pipeline and Twin “Experiment settings.”
+Primary algorithm: **Q-Learning** (ε-greedy train, argmax eval). SARSA and Double Q-Learning are supported in the same pipeline and Twin **Experiment settings**.
 
 ### Modelling (wholesale-exposed tariff)
 
@@ -74,7 +103,7 @@ Wholesale-export · 53 held-out test days · Q-Learning 10k episodes × seeds 42
 | Controller | Net cost (AUD) |
 |------------|----------------|
 | Perfect foresight bound | 74.92 |
-| **Greedy (5-action)** | **90.39** |
+| **Greedy (5-action)** | **90.39** (~43.8% vs no-battery) |
 | Current Q (mean ± std) | 124.23 ± 11.65 |
 | Privileged Q — true 4h direction | 139.68 ± 5.55 |
 | No-battery reference | 160.75 |
@@ -85,12 +114,15 @@ Do **not** mix these totals with older fixed-FiT CA2 runs.
 
 ### Run the experiment
 
+Headline Results numbers use the **true-direction (oracle)** privileged probe on 53 held-out days × seeds 42–46.
+`config.yaml` may keep `forecast.mode: forecast` for deployable-style training; the Twin Privileged checkbox still evaluates with **oracle**.
+
 ```bash
-# Realistic forecast mode (deployable-style signal)
+# Realistic forecast mode (deployable-style signal / Twin default model tag)
 python -m src.forecast_info_experiment --foresight forecast --agents q_learning \
   --episodes 10000 --seeds 42 43 44 45 46 --tag forecast_exp
 
-# True-direction (oracle) privileged probe — matches headline framing
+# True-direction (oracle) privileged probe — matches headline Results framing
 python -m src.forecast_info_experiment --foresight oracle --agents q_learning \
   --episodes 10000 --seeds 42 43 44 45 46 --tag oracle_priv
 
@@ -102,16 +134,11 @@ python -m src.forecast_info_experiment --quick --foresight forecast --tag smoke
 ```
 
 Outputs: `results/logs/forecast_exp_*.csv`, plots under `results/plots/`, models under `results/models/`.  
-Write-up: `deliverables/notebooklm/CA2_Forecast_Info_Experiment_Findings.md`.
+Write-up: [`deliverables/notebooklm/CA2_Forecast_Info_Experiment_Findings.md`](deliverables/notebooklm/CA2_Forecast_Info_Experiment_Findings.md).
 
-## Dashboard notes (demo)
+---
 
-- **Digital Twin:** Auto-runs once on first open; after settings change, click **Run comparison** again.
-- **Play vs Agent:** You receive a **realistic** 4h forecast; Privileged opponents may use a **true** direction signal — framed as an **interactive oversight demo**, not a scientifically fair contest.
-- Suggested Twin/demo day: `2012-07-14` with forecast_exp models (seed 42) under `results/models/`.
-- Landing animation = heuristic preview, not the trained Q-Learning agent.
-
-### Presentation pack
+## Presentation pack
 
 ```
 deliverables/presentation/
@@ -124,7 +151,9 @@ Regenerate: `python scripts/build_ca2_presentation.py`.
 
 ## Earlier CA2 work (grid-charge / export MDP)
 
-CA1 was solar-only (3 actions). CA2 first extended the MDP to 5 actions and showed that allowing arbitrage lowers the *oracle* ceiling, while reactive heuristics / coarse tabular RL can still underperform greedy self-use. See `deliverables/notebooklm/CA2_Arbitrage_Extension_Findings.md`.
+CA1 was solar-only (3 actions). CA2 first extended the MDP to 5 actions and showed that allowing arbitrage lowers the *oracle* ceiling, while reactive heuristics / coarse tabular RL can still underperform greedy self-use. See [`deliverables/notebooklm/CA2_Arbitrage_Extension_Findings.md`](deliverables/notebooklm/CA2_Arbitrage_Extension_Findings.md).
+
+---
 
 ## Requirements
 
@@ -134,7 +163,7 @@ CA1 was solar-only (3 actions). CA2 first extended the MDP to 5 actions and show
 pip install -r requirements.txt
 ```
 
-Includes Streamlit, matplotlib, plotly, pandas, numpy, scipy, PyYAML, Pillow.  
+Includes FastAPI / Uvicorn (Web Twin), Streamlit, matplotlib, plotly, pandas, numpy, scipy, PyYAML, Pillow.  
 Run all commands from the repository root (`rl-battery-dispatch/`).
 
 ## Data
@@ -160,17 +189,25 @@ Run all commands from the repository root (`rl-battery-dispatch/`).
 │   ├── oracle.py / rule_baseline.py / train.py / replay.py
 │   ├── live_feed.py                # Live AEMO NSW1
 │   └── agents/                     # Q-Learning, SARSA, Double Q-Learning
-├── dashboard/
+├── webapp/                         # FastAPI Web Twin (published UI)
+│   ├── main.py / play_engine.py / landing_hero.py
+│   └── static/                     # index.html, app.js, styles
+├── dashboard/                      # Streamlit twin (local research)
 │   ├── app.py                      # Routing + Digital Twin
 │   ├── twin_panels.py              # Twin KPIs, charts, inspector, live panel
 │   ├── play_vs_agent.py            # Play vs Agent game
-│   ├── landing_page.py / theme.py / dispatch_widget.py
+│   └── landing_page.py / theme.py / dispatch_widget.py
 ├── scripts/
 │   ├── system_test.py
-│   └── build_ca2_presentation.py
+│   ├── build_ca2_presentation.py
+│   └── build_user_guide_docx.py
 ├── deliverables/
+│   ├── GreineQ_User_Guide.md       # End-user guide
 │   ├── presentation/               # PPTX + speaker notes + demo plan
-│   └── notebooklm/                 # Findings + defence notes
+│   ├── notebooklm/                 # Findings + defence notes
+│   └── relatorio_dataset.md        # Dataset QA notes (CA1)
+├── results/
+│   └── models/README.md            # How to obtain / place Q-tables
 ├── Dockerfile/
 └── data/
 ```
@@ -207,13 +244,13 @@ python -m src.train --agent double_q_learning --episodes 10000 --tag current
 ## Design notes
 
 - **Export honesty:** wholesale-exposed export is experimental. Round-trip sell is hard (retail margin ≈ 0.22 AUD/kWh + efficiency/cycling); profitable foresight is mostly “buy cheap → serve load later.”
-- **Ethics / deployment:** experimental tariff and partial live inputs are disclosed; Live Price Monitor is informational; Play is an oversight demo; this is a software twin, not a physical battery.
+- **Ethics / deployment:** experimental tariff and partial live inputs are disclosed; Price Monitor is informational; Play is an oversight demo; this is a software twin, not a physical battery.
 - Chronological train/val/test; foresight thresholds fitted on **train only**.
 
 ## Docker (Web Twin)
 
 Publishes the **FastAPI web app** (container port **8000**, host default **8501**).  
-See [Dockerfile/README.md](Dockerfile/README.md).
+See [`Dockerfile/README.md`](Dockerfile/README.md).
 
 ```bash
 docker compose -f Dockerfile/docker-compose.yml up -d --build
@@ -222,6 +259,7 @@ docker compose -f Dockerfile/docker-compose.yml up -d --build
 
 Local web without Docker: `.\run_web.ps1` → http://localhost:8080  
 Streamlit (optional local): `python -m streamlit run dashboard/app.py`
+
 ## License
 
 Research and educational use. Raw Ausgrid and AEMO datasets are subject to their respective terms of use.

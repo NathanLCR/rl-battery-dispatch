@@ -50,8 +50,9 @@ from dashboard.twin_panels import (
     render_winner_kpi_strip,
 )
 
-DEFAULT_Q = "Q_q_learning_20260704_115627_main.npy"
-DEFAULT_SARSA = "Q_sarsa_20260704_115834_main.npy"
+# Prefer CA2 forecast_exp seed-42 tables when present (web Twin uses the same rule).
+DEFAULT_Q = "forecast_exp_seed42"
+DEFAULT_SARSA = "forecast_exp_seed42"
 
 SPLIT_LABELS = {
     "test": "Test days (held out)",
@@ -479,11 +480,27 @@ def _winner_summary(summary_df: pd.DataFrame, no_bat: float) -> tuple[str, str]:
     return short, why
 
 
+def _preferred_model_name(models: list[Path], hint: str = "") -> str | None:
+    """Pick forecast_exp + seed42 when available; else first file matching hint; else first."""
+    if not models:
+        return None
+    names = [p.name for p in models]
+    for n in names:
+        if "forecast_exp" in n and "seed42" in n:
+            return n
+    if hint and hint in names:
+        return hint
+    for n in names:
+        if hint and hint in n:
+            return n
+    return names[0]
+
+
 def _model_selectbox(label: str, agent_label: str, models: list[Path], default_name: str) -> str | None:
     names = [p.name for p in models]
     if not names:
         return None
-    default = default_name if default_name in names else names[0]
+    default = _preferred_model_name(models, default_name) or names[0]
     by_name = {p.name: p for p in models}
     return st.selectbox(
         label,
@@ -629,20 +646,9 @@ def _simulate_episode(
     no_bat = no_battery_import_cost(episode_df, cfg)
     oracle = oracle_perfect_foresight_import(episode_df, cfg)
 
+    # Privileged Twin checkbox is labelled "true 4h signal" — always evaluate with
+    # oracle direction (matches web Twin / CA2 headline). Ignore config.forecast.mode here.
     forecast_model = None
-    if show_q_privileged and cfg.forecast_mode == "forecast":
-        from src.price_forecast import PriceForecastModel, fit_price_forecast
-
-        fp = cfg.artifacts_dir / "price_forecast.json"
-        if fp.exists():
-            forecast_model = PriceForecastModel.load(fp)
-        else:
-            forecast_model = fit_price_forecast(
-                df,
-                horizon_steps=cfg.forecast_horizon_steps,
-                persistence_alpha=cfg.forecast_persistence_alpha,
-                noise_scale=cfg.forecast_noise_scale,
-            )
 
     # (policy_name, action_fn, privileged, foresight_mode)
     policies: dict[str, tuple[object, bool, str]] = {}
@@ -661,8 +667,7 @@ def _simulate_episode(
             "q_learning", str(cfg.results_models / q_priv_model_name), q_priv_model_name
         )
         _require_compatible_q_table(qp_agent, privileged=True, model_name=q_priv_model_name)
-        fm = cfg.forecast_mode if cfg.forecast_mode in ("oracle", "forecast") else "forecast"
-        policies["Privileged Q-Learning (4h foresight)"] = (greedy_action_fn(qp_agent), True, fm)
+        policies["Privileged Q-Learning (4h foresight)"] = (greedy_action_fn(qp_agent), True, "oracle")
     if show_sarsa and sarsa_model_name:
         s_agent = load_rl_agent("sarsa", str(cfg.results_models / sarsa_model_name), sarsa_model_name)
         _require_compatible_q_table(s_agent, privileged=False, model_name=sarsa_model_name)
@@ -1129,7 +1134,7 @@ def _render_app() -> None:
                         "Privileged Q model",
                         "Privileged Q — true 4h signal",
                         q_priv_models,
-                        q_priv_models[0].name if q_priv_models else "",
+                        "forecast_exp_seed42",
                     )
                 if show_sarsa:
                     sarsa_model_name = _model_selectbox(

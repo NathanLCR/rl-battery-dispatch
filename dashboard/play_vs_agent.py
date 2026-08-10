@@ -360,7 +360,7 @@ def render_play_vs_agent(
         cfg,
         privileged=use_privileged,
         foresight_mode=foresight if use_privileged else "none",
-        forecast_model=forecast_model if use_privileged else None,
+        forecast_model=None,  # Privileged opponent uses oracle direction; human still sees realistic forecast UI
     )
     greedy_env = MicrogridEnv(episode_df, thresholds, cfg, privileged=False)
     agent_trace, agent_cost, agent_last = _rollout_n(agent_env, agent_fn, n_taken)
@@ -416,7 +416,7 @@ def render_play_vs_agent(
                 cfg,
                 privileged=use_privileged,
                 foresight_mode=foresight if use_privileged else "none",
-                forecast_model=forecast_model if use_privileged else None,
+                forecast_model=None,
             )
             g_env = MicrogridEnv(episode_df, thresholds, cfg, privileged=False)
             play["agent_trace"], play["agent_summary"] = _rollout_full(a_env, agent_fn)
@@ -647,7 +647,7 @@ def render_play_vs_agent(
             cfg,
             privileged=use_privileged,
             foresight_mode=foresight if use_privileged else "none",
-            forecast_model=forecast_model if use_privileged else None,
+            forecast_model=None,
         )
         _, _, a_last = _rollout_n(a_env2, agent_fn, len(play["human_actions"]))
         agent_act = a_last or "hold"
@@ -767,7 +767,7 @@ def _render_agent_decision_tab(
         cfg,
         privileged=use_privileged,
         foresight_mode=foresight if use_privileged else "none",
-        forecast_model=forecast_model if use_privileged else None,
+        forecast_model=None,
     )
     a_env.reset()
     inspect_step = 0 if n_taken == 0 else min(n_taken - 1, 47)

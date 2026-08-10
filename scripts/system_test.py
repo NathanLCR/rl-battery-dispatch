@@ -79,7 +79,9 @@ def main() -> None:
         total_r += r
         if info["export_kwh"] > 0:
             assert abs(info["export_price_per_kwh"] - info["price_per_kwh"]) < 1e-9
-    assert abs(env.terminal_soc_adjustment) < 1e-9 or True  # HOLD keeps ~initial SOC
+    # HOLD for a full day: SOC stays at the initial level, so terminal adjustment ≈ 0.
+    assert abs(env._soc_pct - cfg.initial_soc_pct) < 1e-6
+    assert abs(env.terminal_soc_adjustment) < 1e-6
     ok(f"env episode HOLD cost={env.total_grid_cost:.3f} AUD export_pricing=wholesale")
 
     # 6. Privileged forecast foresight differs from oracle potentially

@@ -29,8 +29,11 @@ env/
 # Jupyter
 .ipynb_checkpoints/
 
-# Generated training outputs (reproducible via src/train.py)
+# Generated training outputs (reproducible via src/train.py / forecast_info_experiment)
 results/
+!results/models/
+results/models/*
+!results/models/README.md
 artifacts/
 
 # IDE / editor
